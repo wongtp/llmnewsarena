@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+*.sqlite
+*.sqlite3
+*.db
+data/
+.pytest_cache/
+*.egg-info/
+.DS_Store
+.claude/
+
+# private dev notes (not published)
+CLAUDE.md
+docs/

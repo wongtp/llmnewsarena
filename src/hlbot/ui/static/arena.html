@@ -1,0 +1,1885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>hlbot · arena</title>
+<meta name="theme-color" content="#0a0c10"/>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.85em' font-size='85' fill='%235b8def'%3E%E2%96%B2%3C/text%3E%3C/svg%3E"/>
+<style>
+  :root{
+    --bg:#0a0c10; --panel:#101319; --panel2:#0d1015; --line:#1d232d; --line2:#272e3a;
+    --hover:#141a24;
+    --fg:#e8ebf2; --dim:#8a93a4; --faint:#6b7484;
+    --green:#2ebd85; --red:#f6465d; --accent:#5b8def; --amber:#e8c66a; --news:#f0a020;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{margin:0;background:var(--bg);
+    color:var(--fg);font:13.5px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;}
+  /* single top bar: brand + mode on the left, the leaderboard riding the middle, usage right */
+  .topbar{display:flex;align-items:center;gap:10px;padding:0 12px;height:40px;
+    border-bottom:1px solid var(--line);}
+  .brand{font-weight:700;letter-spacing:2px;font-size:13px;white-space:nowrap;}
+  .brand .a{color:var(--accent);}
+  .badge{font-size:10px;font-weight:700;letter-spacing:.8px;padding:1px 7px;border-radius:2px;
+    background:none;color:var(--amber);border:1px solid #5c4a1c;white-space:nowrap;}
+  .badge.live{color:var(--red);border-color:#5c1c24;}
+  .usebtn{cursor:pointer;color:var(--dim);border-color:var(--line2);}
+  .usebtn:hover{color:var(--fg);border-color:var(--accent);}
+  .ustab{width:100%;border-collapse:collapse;font-size:12px;}
+  .ustab th{font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);
+    font-weight:600;text-align:right;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  .ustab td{padding:8px 12px;text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);
+    border-bottom:1px solid var(--line);white-space:nowrap;}
+  .ustab th:first-child,.ustab td:first-child{text-align:left;}
+  .ustab tr.tot td{border-top:1px solid var(--line2);border-bottom:none;font-weight:700;}
+  /* docs modal prose */
+  .docsbody{padding:4px 20px 18px;font-size:12.5px;line-height:1.66;color:var(--dim);}
+  .docsbody h3{color:var(--fg);font-size:10.5px;letter-spacing:1.3px;text-transform:uppercase;
+    margin:20px 0 7px;font-weight:600;}
+  .docsbody p{margin:7px 0;}
+  .docsbody b{color:var(--fg);font-weight:650;}
+  .docsbody ul{margin:7px 0;padding-left:18px;}
+  .docsbody li{margin:5px 0;}
+  .docsbody .flow{font-family:var(--mono);font-size:11px;color:var(--dim);background:var(--panel2);
+    border:1px solid var(--line);border-radius:3px;padding:9px 12px;margin:9px 0;
+    overflow-x:auto;white-space:pre;}
+  .docstab{width:100%;border-collapse:collapse;font-size:12px;margin:9px 0;}
+  .docstab th{font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);
+    font-weight:600;text-align:left;padding:6px 10px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  .docstab td{padding:6px 10px;border-bottom:1px solid var(--line);}
+  .docstab td:nth-child(2){font-family:var(--mono);font-variant-numeric:tabular-nums;}
+  .sub{color:var(--dim);font-size:12px;}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--red);flex:none;}
+  .dot.on{background:var(--green);}
+  .upd{color:var(--faint);font-size:11px;white-space:nowrap;}
+
+  /* hairline-divided grid: one instrument, not floating cards */
+  .grid{display:grid;grid-template-columns:var(--gcols,1.55fr 7px 1fr);gap:0;height:calc(100dvh - 41px);}
+  .col{display:flex;flex-direction:column;gap:0;min-height:0;min-width:0;}
+  /* draggable panel dividers: the hairline between panels IS the drag handle (7px hit
+     area, 1px visible line). Drag to resize, double-click (or the ⟲ button) to reset. */
+  .vsplit{cursor:col-resize;touch-action:none;
+    background:linear-gradient(to right,transparent 3px,var(--line) 3px,var(--line) 4px,transparent 4px);}
+  .hsplit{flex:0 0 7px;cursor:row-resize;touch-action:none;
+    background:linear-gradient(to bottom,transparent 3px,var(--line) 3px,var(--line) 4px,transparent 4px);}
+  .vsplit:hover,.vsplit.drag{background:linear-gradient(to right,transparent 2px,var(--accent) 2px,var(--accent) 5px,transparent 5px);}
+  .hsplit:hover,.hsplit.drag{background:linear-gradient(to bottom,transparent 2px,var(--accent) 2px,var(--accent) 5px,transparent 5px);}
+  #pospanel{flex:0 0 var(--posh,42%);}
+  /* leaderboard strip inside the top bar */
+  .lbbar{flex:1;min-width:0;display:flex;align-items:center;overflow-x:auto;height:100%;
+    scrollbar-width:none;}
+  .lbbar::-webkit-scrollbar{display:none;}
+  .lbc{display:flex;align-items:center;gap:6px;white-space:nowrap;padding:0 10px;height:100%;
+    border-left:1px solid var(--line);font-size:12px;cursor:pointer;transition:background .15s;}
+  .lbc:hover{background:var(--hover);}
+  .lbc:last-child{border-right:1px solid var(--line);}
+  .lbc .rk{color:var(--faint);font-weight:700;font-size:11px;}
+  .lbc .nm{font-weight:700;}
+  .lbc .eq{font-weight:700;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:12px;}
+  .lbc .ret,.lbc .u{font-size:11px;font-variant-numeric:tabular-nums;font-family:var(--mono);}
+  .lbc .live{color:var(--red);font-size:8.5px;font-weight:800;letter-spacing:.5px;}
+  .lbc .halted{color:var(--amber);font-size:8.5px;font-weight:800;letter-spacing:.5px;}
+  .panel{background:var(--bg);display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+  .panel+.panel{border-top:1px solid var(--line);}
+  .panel>.hd{display:flex;align-items:center;gap:10px;padding:6px 12px;border-bottom:1px solid var(--line);}
+  .panel>.hd h2{font-size:10px;text-transform:uppercase;letter-spacing:1.3px;color:var(--dim);margin:0;font-weight:600;}
+  .panel>.hd .meta{margin-left:auto;color:var(--faint);font-size:11px;}
+  .ptab{background:none;border:none;padding:0;cursor:pointer;font:inherit;font-size:11px;
+    text-transform:uppercase;letter-spacing:1.3px;font-weight:600;color:var(--faint);
+    display:inline-flex;gap:6px;align-items:baseline;}
+  .ptab:hover{color:var(--dim);} .ptab.on{color:var(--fg);}
+  .ptab .meta{margin-left:0;}
+  .mlogo{border-radius:3px;vertical-align:-3px;object-fit:contain;flex:none;}
+  .mdot{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:-1px;flex:none;}
+  .livetag{font-size:8px;font-weight:800;letter-spacing:.5px;color:var(--red);vertical-align:1px;}
+  .grow{flex:1;min-height:0;}
+
+  /* price chart */
+  .chead{display:flex;align-items:center;gap:14px;row-gap:6px;padding:6px 12px;
+    border-bottom:1px solid var(--line);flex-wrap:wrap;}
+  .pairbtn{display:flex;align-items:center;gap:7px;background:none;border:1px solid var(--line2);
+    border-radius:3px;padding:5px 9px;font-size:13px;font-weight:700;color:var(--fg);cursor:pointer;font-family:inherit;}
+  .pairbtn:hover{border-color:var(--accent);}
+  .caret{color:var(--faint);font-size:9px;}
+  .dexb{font-size:8.5px;letter-spacing:.08em;font-weight:700;color:var(--faint);}
+  .cdot{width:17px;height:17px;min-width:17px;border-radius:50%;display:inline-flex;align-items:center;
+    justify-content:center;font-size:9px;font-weight:800;color:#fff;background:#3a4356;}
+  .cdot.sm{width:14px;height:14px;min-width:14px;font-size:8px;margin-right:6px;}
+  .cicon{width:17px;height:17px;min-width:17px;border-radius:50%;object-fit:contain;background:#1a2231;vertical-align:middle;}
+  .cicon.sm{width:14px;height:14px;min-width:14px;margin-right:6px;}
+  #c-ico{display:inline-flex;align-items:center;}
+  .cstat{display:flex;flex-direction:column;gap:1px;}
+  .cstat .clbl{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);white-space:nowrap;}
+  .cstat b{font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;font-family:var(--mono);}
+  .ivals{display:flex;gap:2px;margin-left:auto;}
+  .ivals .iv{background:none;border:none;color:var(--faint);padding:3px 8px;font-size:11.5px;
+    cursor:pointer;font-family:inherit;}
+  .ivals .iv:hover{color:var(--fg);background:var(--hover);}
+  .ivals .iv.on{color:var(--fg);font-weight:700;box-shadow:inset 0 -2px 0 var(--accent);}
+  .tzsel{background:none;border:none;color:var(--faint);padding:3px 4px;font-size:11px;
+    cursor:pointer;font-family:inherit;max-width:150px;
+    -webkit-appearance:none;appearance:none;}
+  .tzsel:hover{color:var(--fg);background:var(--hover);}
+  .tzsel option{background:#141a26;color:#c8d0dd;}
+  /* TradingView-style bottom toolbar: ranges left, clock + tz + y-scale toggles right */
+  .cfoot{display:flex;align-items:center;gap:2px;padding:2px 8px;border-top:1px solid var(--line);
+    font-size:11px;color:var(--faint);flex:0 0 auto;}
+  .cfoot .rng{background:none;border:none;color:var(--faint);padding:2px 7px;font-size:11px;
+    cursor:pointer;font-family:inherit;}
+  .cfoot .rng:hover{color:var(--fg);background:var(--hover);}
+  .cfoot .rng.on{color:var(--fg);font-weight:700;box-shadow:inset 0 -2px 0 var(--accent);}
+  .cfoot .sp{flex:1;}
+  .tznow{font-variant-numeric:tabular-nums;padding:0 2px;font-family:var(--mono);}
+  .ysep{width:1px;height:13px;background:var(--line2);margin:0 6px;}
+  #chart{flex:1;min-height:240px;position:relative;}
+  #chart .cmsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    color:var(--faint);font-size:12px;pointer-events:none;z-index:2;}
+  /* news-dot popover: the headline behind the news chart marker (drag to park it anywhere) */
+  #npop{position:absolute;z-index:4;max-width:300px;background:var(--panel);border:1px solid var(--line2);
+    border-radius:3px;padding:9px 28px 9px 11px;cursor:grab;
+    font-size:12px;line-height:1.5;user-select:none;
+    touch-action:none;}
+  #npop:active{cursor:grabbing;}
+  #npop .t{font-weight:600;color:var(--fg);display:-webkit-box;-webkit-line-clamp:7;
+    -webkit-box-orient:vertical;overflow:hidden;}
+  #npop .s{color:var(--faint);font-size:10.5px;margin-top:4px;display:flex;align-items:center;gap:5px;}
+  #npop .s::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--news);flex:none;}
+  #npop .x{position:absolute;top:4px;right:7px;color:var(--faint);font-size:15px;line-height:1;
+    padding:3px 5px;cursor:pointer;}
+  #npop .x:hover{color:var(--fg);background:var(--hover);}
+  .up{color:var(--green);} .dn{color:var(--red);}
+  .tlink{color:var(--accent);cursor:pointer;} .tlink:hover{text-decoration:underline;}
+  /* price-since-news readouts: one inline line per implicated ticker */
+  .nticks{display:flex;flex-wrap:wrap;gap:3px 16px;margin-top:5px;}
+  .ntick{display:inline-flex;align-items:center;gap:5px;padding:0;cursor:pointer;
+    background:none;border:none;color:var(--fg);font:inherit;font-size:11.5px;font-weight:700;}
+  .ntick:hover b{text-decoration:underline;}
+  .ntick .nt-pct{font-variant-numeric:tabular-nums;font-weight:700;font-family:var(--mono);}
+  .ntick .nt-sub{display:inline-flex;gap:4px;font-size:10px;font-weight:500;color:var(--faint);
+    font-variant-numeric:tabular-nums;font-family:var(--mono);}
+  .ntick .nt-sub[hidden]{display:none;}
+  /* market switcher modal */
+  .mkov{position:fixed;inset:0;background:#04060ad9;z-index:60;display:flex;
+    align-items:flex-start;justify-content:center;padding:7vh 16px 16px;}
+  .mkov[hidden]{display:none;}
+  .mkbox{width:min(760px,100%);background:var(--panel);border:1px solid var(--line2);border-radius:4px;
+    display:flex;flex-direction:column;max-height:80vh;}
+  #mksearch{margin:12px 12px 9px;padding:8px 11px;background:var(--bg);color:var(--fg);
+    border:1px solid var(--line2);border-radius:3px;font:13px var(--mono);outline:none;}
+  #mksearch:focus{border-color:var(--accent);}
+  .mkchips{display:flex;gap:6px;padding:0 12px 9px;}
+  .chip2{font-size:10px;letter-spacing:.04em;padding:2px 9px;border-radius:2px;background:none;
+    color:var(--faint);border:1px solid var(--line2);cursor:pointer;}
+  .chip2.on{color:var(--fg);border-color:var(--accent);}
+  .mklist{overflow:auto;border-top:1px solid var(--line);}
+  .mktab{width:100%;border-collapse:collapse;}
+  .mktab th{position:sticky;top:0;background:var(--panel);font-size:10px;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--faint);z-index:2;text-align:left;}
+  .mktab td,.mktab th{padding:6px 14px;white-space:nowrap;font-size:12px;}
+  .mktab .r{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);}
+  .mkrow{cursor:pointer;} .mkrow:hover{background:var(--hover);} .mkrow.cur td{background:var(--hover);}
+  .mkfoot{display:flex;gap:10px;padding:8px 14px;border-top:1px solid var(--line);font-size:11px;color:var(--faint);}
+
+  /* shared numeric text (leaderboard equity + position PnL live-paint targets) */
+  .rk{color:var(--faint);font-weight:700;font-size:13px;text-align:center;}
+  .eq{font-size:15px;font-weight:700;}
+  .ret{font-size:12px;font-weight:600;}
+  .pos{color:var(--green);} .neg{color:var(--red);} .mut{color:var(--dim);}
+
+  /* positions + feed */
+  .scroll{overflow-y:auto;}
+  .pcard{padding:8px 12px;border-bottom:1px solid var(--line);cursor:pointer;}
+  .pcard:last-child{border-bottom:none;} .pcard:hover{background:var(--hover);}
+  .prow{display:flex;align-items:center;gap:8px;font-size:12.5px;flex-wrap:wrap;}
+  .prow .m{color:var(--faint);font-size:11px;}
+  /* open positions: one card per news item, exchange-ticket rows per model position */
+  .ghd{display:flex;gap:10px;align-items:baseline;}
+  .gnews{font-size:11.5px;color:var(--fg);line-height:1.35;min-width:0;}
+  .gmeta{margin-left:auto;color:var(--faint);font-size:10px;white-space:nowrap;}
+  .gpnl{font-weight:700;font-size:12.5px;white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .gpnl .gpct{font-weight:600;font-size:10.5px;opacity:.85;}
+  .prow2{display:grid;grid-template-columns:1.45fr 1fr .9fr 1.05fr 1.05fr 1fr;gap:10px;
+    align-items:start;padding:7px 0 2px;margin-top:6px;border-top:1px solid var(--line);}
+  .prow2 .pc{min-width:0;line-height:1.25;}
+  .prow2 .lbl{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);
+    margin-bottom:1px;white-space:nowrap;}
+  .prow2 .val{font-size:12px;font-weight:650;font-variant-numeric:tabular-nums;font-family:var(--mono);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .prow2 .val .sub{font-size:10px;font-weight:500;}
+  .prow2 .val.rsn{font-size:11px;font-weight:600;font-family:inherit;}
+  .prow2 .mdl .val{font-family:inherit;font-size:12.5px;}
+  .prow2 .sub{font-size:10px;color:var(--faint);font-variant-numeric:tabular-nums;font-family:var(--mono);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
+  .prow2 .mdl .sub{display:flex;gap:7px;align-items:center;flex-wrap:wrap;overflow:visible;
+    margin-top:3px;font-family:inherit;}
+  .sidechip{font-size:10px;font-weight:800;letter-spacing:.5px;}
+  .sidechip.long{color:var(--green);} .sidechip.short{color:var(--red);}
+
+  .feed{overflow-y:auto;}
+  .fitem{padding:7px 12px;border-bottom:1px solid var(--line);font-size:12.5px;}
+  /* scan signal: rows somebody traded carry a faint green wash; rows everyone passed on
+     recede (dim headline) so the actioned news pops out of the stream */
+  .fitem.traded{background:#2ebd8509;}
+  .fitem.traded.nclick:hover{background:#2ebd8514;}
+  .fitem.quiet .hl{color:var(--dim);}
+  .fitem .t{color:var(--faint);font-size:10.5px;float:right;}
+  .ntk{color:var(--fg);font-weight:600;border-bottom:1px solid #4a5468;}
+  .chip-row{display:flex;flex-wrap:wrap;gap:3px 13px;margin-top:4px;}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--dim);}
+  .chip.long{color:var(--green);} .chip.short{color:var(--red);}
+  .chip.fire{font-weight:700;}
+  .hl{color:var(--fg);}
+  .ldmore{padding:10px;text-align:center;}
+  .ldmore button{background:none;border:1px solid var(--line2);color:var(--dim);font-size:11px;
+    border-radius:2px;padding:5px 16px;cursor:pointer;letter-spacing:.03em;}
+  .ldmore button:hover{color:var(--fg);border-color:var(--accent);}
+  .ldmore button[disabled]{opacity:.5;cursor:default;}
+  .empty{color:var(--faint);padding:24px 15px;text-align:center;font-size:12px;}
+  .nclick{cursor:pointer;} .nclick:hover{background:var(--hover);}
+  /* detail modal */
+  .modal{position:fixed;inset:0;background:#04060ad9;display:flex;align-items:center;
+    justify-content:center;z-index:50;}
+  .modal[hidden]{display:none;}
+  .sheet{background:var(--panel);border:1px solid var(--line2);border-radius:4px;width:min(780px,93vw);
+    max-height:86vh;display:flex;flex-direction:column;overflow:hidden;}
+  .sheet .mhd{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border-bottom:1px solid var(--line);}
+  .sheet .mhd .x{margin-left:auto;background:none;border:none;color:var(--dim);font-size:18px;cursor:pointer;line-height:1;}
+  .sheet .mbody{overflow-y:auto;}
+  .mrow{padding:13px 18px;border-bottom:1px solid var(--line);}
+  .mrow:last-child{border-bottom:none;}
+  .mrow .mhdr{display:flex;align-items:center;gap:8px;font-size:13px;}
+  .mrow .mhdr .sw{width:9px;height:9px;border-radius:50%;}
+  .mrow .mhdr .gt{color:var(--faint);font-size:11px;}
+  .mrat{color:var(--dim);font-size:12.5px;margin:7px 0 5px;line-height:1.5;font-style:italic;}
+  .mout{font-size:12px;}
+  .amber{color:var(--amber);}
+  /* per-model trade-history modal (leaderboard chip click) */
+  #mdtitle{flex:1;min-width:0;}
+  .mstats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px 18px;padding:15px 18px;
+    border-bottom:1px solid var(--line);}
+  .mstat{min-width:0;line-height:1.35;}
+  .mstat .k{font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);
+    white-space:nowrap;font-weight:600;}
+  .mstat .v{font-size:13.5px;font-weight:700;font-variant-numeric:tabular-nums;font-family:var(--mono);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
+  .mstat .s{font-size:10px;color:var(--faint);font-variant-numeric:tabular-nums;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis;}
+  .mdtab{width:100%;border-collapse:collapse;font-size:12px;}
+  .mdtab th{position:sticky;top:0;background:var(--panel);z-index:2;font-size:9.5px;
+    letter-spacing:.07em;text-transform:uppercase;color:var(--faint);padding:8px 10px;
+    text-align:right;border-bottom:1px solid var(--line);}
+  .mdtab td{padding:7px 10px;text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);
+    border-bottom:1px solid var(--line);white-space:nowrap;}
+  .mdtab th:first-child,.mdtab td:first-child,
+  .mdtab th:nth-child(2),.mdtab td:nth-child(2),
+  .mdtab th:last-child,.mdtab td:last-child{text-align:left;}
+  .mdtab td:last-child{white-space:normal;min-width:120px;}
+  .mdtab td:first-child,.mdtab td:nth-child(2),.mdtab td:last-child,
+  .ustab td:first-child{font-family:inherit;}   /* text columns stay in the UI face */
+  .mdtab .hlsub{font-size:10px;color:var(--faint);white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;max-width:230px;font-weight:500;}
+  .mdtab .opentag{font-size:8.5px;font-weight:800;letter-spacing:.5px;color:var(--green);}
+  ::-webkit-scrollbar{width:8px;} ::-webkit-scrollbar-thumb{background:#222936;border-radius:2px;}
+  /* interaction polish: one consistent hover feel across every clickable element */
+  .ivals .iv,.cfoot .rng,.ldmore button,.usebtn,.ptab,.chip2,.nclick,.pairbtn,
+  .sheet .mhd .x{transition:background .15s,color .15s,border-color .15s;}
+  .sheet .mhd .x:hover{color:var(--fg);}
+  /* small screens: panels stack, the page scrolls (desktop keeps the fixed one-screen grid) */
+  @media (max-width:920px){
+    html,body{height:auto;overflow-y:auto;}
+    .upd{display:none;}
+    .grid{grid-template-columns:1fr;height:auto;}
+    .vsplit,.hsplit,#layoutreset{display:none;}   /* stacked layout: nothing to drag */
+    .col~.col{border-top:1px solid var(--line);}
+    .panel~.panel{border-top:1px solid var(--line);}   /* hidden .hsplit no longer draws the line */
+    .col{min-height:unset;}
+    .col>.panel{height:auto !important;flex:none !important;}
+    #chart{height:330px;flex:none;}
+    .scroll{max-height:55vh;}
+    .prow2{grid-template-columns:repeat(3,1fr);row-gap:8px;}
+    .mstats{grid-template-columns:repeat(2,1fr);}
+    .mbody{overflow-x:auto;}
+    .chead{gap:10px;}
+    .chead .cstat:nth-child(n+4){display:none;}   /* keep Last + 24h; the rest live in the switcher */
+    .ivals .iv,.cfoot .rng{padding:7px 9px;}      /* finger-sized tap targets */
+  }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <span class="dot" id="conn"></span>
+  <span class="brand"><span class="a">▲</span> ARENA</span>
+  <span class="badge" id="mode">PAPER</span>
+  <div id="lbbar" class="lbbar"></div>
+  <button class="badge usebtn" id="layoutreset" hidden title="Reset panel sizes to the default layout">⟲ layout</button>
+  <button class="badge usebtn" id="docsbtn">docs</button>
+  <button class="badge usebtn" id="usagebtn">usage</button>
+  <span class="upd" id="upd"></span>
+</div>
+
+<div class="grid" id="grid">
+  <div class="col" id="lcol">
+    <div class="panel grow">
+      <div class="chead">
+        <button id="pairbtn" class="pairbtn" title="Switch market — search all tradable pairs">
+          <span id="c-ico"><span class="cdot">·</span></span>
+          <span id="c-pair">—</span>
+          <span class="dexb" id="c-dexb" style="display:none">XYZ</span>
+          <span class="caret">▾</span>
+        </button>
+        <div class="cstat"><span class="clbl">Last</span><b id="c-last">—</b></div>
+        <div class="cstat"><span class="clbl">24h</span><b id="c-chg">—</b></div>
+        <div class="cstat"><span class="clbl">Index</span><b id="c-index">—</b></div>
+        <div class="cstat"><span class="clbl">24h Vol</span><b id="c-vol">—</b></div>
+        <div class="cstat"><span class="clbl">OI</span><b id="c-oi">—</b></div>
+        <div class="cstat"><span class="clbl">Funding / CD</span>
+          <b><span id="c-fund">—</span><span class="mut"> / </span><span id="c-cd">—</span></b></div>
+        <span class="ivals" id="ivals"></span>
+      </div>
+      <div id="chart"><div class="cmsg" id="cmsg">loading chart…</div>
+        <div id="npop" hidden></div></div>
+      <div class="cfoot">
+        <span id="ranges"></span>
+        <span class="sp"></span>
+        <span class="tznow" id="tznow"></span>
+        <select class="tzsel" id="tzsel" title="Chart timezone"></select>
+        <span class="ysep"></span>
+        <button class="rng" id="y-pct" title="Percent scale">%</button>
+        <button class="rng" id="y-log" title="Logarithmic scale">log</button>
+        <button class="rng" id="y-auto" title="Auto-fit price scale">auto</button>
+      </div>
+    </div>
+    <div class="hsplit" id="hsplit" title="Drag to resize · double-click to reset"></div>
+    <div class="panel" id="pospanel">
+      <div class="hd">
+        <button class="ptab on" id="tab-pos">Open positions <span class="meta" id="posmeta">0</span></button>
+        <button class="ptab" id="tab-hist">Trade history <span class="meta" id="histmeta">0</span></button>
+      </div>
+      <div class="scroll" id="pos"><div class="empty">no open positions</div></div>
+      <div class="scroll" id="hist" hidden><div class="empty">no closed trades yet</div></div>
+    </div>
+  </div>
+
+  <div class="vsplit" id="vsplit" title="Drag to resize · double-click to reset"></div>
+
+  <div class="col">
+    <div class="panel grow">
+      <div class="hd"><h2>Activity</h2></div>
+      <div class="feed" id="feed"><div class="empty">waiting for news…</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- per-model trade history: opened by clicking a leaderboard chip. Sits BEFORE #modal in
+     the DOM so a clicked trade's news-detail modal (same z-index) paints on top of it. -->
+<div id="mdmodal" class="modal" hidden><div class="sheet" style="width:min(960px,95vw)">
+  <div class="mhd"><div id="mdtitle"></div><button class="x" id="mdclose">✕</button></div>
+  <div class="mbody" id="mdbody"></div>
+</div></div>
+
+<div id="modal" class="modal" hidden><div class="sheet">
+  <div class="mhd"><div id="mtitle"></div><button class="x" id="mclose">✕</button></div>
+  <div class="mbody" id="mbody"></div>
+</div></div>
+
+<!-- usage modal: per-model credits / cost / analysis speed -->
+<div id="usemodal" class="modal" hidden><div class="sheet" style="width:min(920px,95vw)">
+  <div class="mhd"><div><div class="hl" style="font-size:14px">Usage &amp; spend</div>
+    <div class="mut" style="font-size:11px;margin-top:3px" id="usesub"></div></div>
+    <button class="x" id="useclose">✕</button></div>
+  <div class="mbody" id="usebody"></div>
+</div></div>
+
+<!-- docs modal: what this project is, methodology, validation, end goal -->
+<div id="docsmodal" class="modal" hidden><div class="sheet" style="width:min(860px,95vw)">
+  <div class="mhd"><div><div class="hl" style="font-size:14px">About this arena</div>
+    <div class="mut" style="font-size:11px;margin-top:3px">5 models · one news feed · identical rules</div></div>
+    <button class="x" id="docsclose">✕</button></div>
+  <div class="mbody docsbody">
+    <h3>What is this?</h3>
+    <p>Five frontier LLMs trade the <b>same live news feed</b> on Hyperliquid perpetuals — crypto
+    perps and trade.xyz equity/index perps — each from its own <b>$10,000</b> account. Every model
+    receives the identical headline at the same instant, with the same prompt, the same shared
+    macro brief, and the same risk rules, sizing, and exit logic. The only per-model setting is its
+    <b>confidence gate</b> — the minimum conviction at which it is allowed to trade. Whatever
+    separates the leaderboard is the models' judgment, nothing else.</p>
+    <table class="docstab">
+      <tr><th>Entrant</th><th>Gate</th><th>Provider</th></tr>
+      <tr><td><span class="mdot" style="background:#d97757"></span> Claude Sonnet 4.6</td><td>≥ 0.80</td><td>Anthropic</td></tr>
+      <tr><td><span class="mdot" style="background:#19c37d"></span> GPT-5.4</td><td>≥ 0.80</td><td>OpenAI</td></tr>
+      <tr><td><span class="mdot" style="background:#4285f4"></span> Gemini 3.5 Flash</td><td>≥ 0.85</td><td>Google</td></tr>
+      <tr><td><span class="mdot" style="background:#9a7cff"></span> DeepSeek V4 Pro</td><td>≥ 0.85</td><td>DeepSeek</td></tr>
+      <tr><td><span class="mdot" style="background:#e05fa0"></span> Grok 4.3</td><td>≥ 0.85</td><td>xAI</td></tr>
+    </table>
+    <p>Gates were fit <b>per model</b> on a historical replay (below) because each model calibrates
+    its own confidence differently — a shared gate would handicap some and flatter others. Lanes
+    with a <span class="livetag">LIVE</span> badge trade real capital; the rest paper-trade through
+    the identical pipeline at exchange prices.</p>
+
+    <h3>How a trade happens</h3>
+    <div class="flow">news wire ─► dedup ─► 5 models analyze in parallel ─► per-model confidence gate
+        ─► risk checks &amp; sizing ─► order ─► managed exit (stop / trail / time)</div>
+    <ul>
+      <li>Each model returns a structured verdict: <b>direction, ticker, confidence,</b> and how
+        time-sensitive the edge is.</li>
+      <li>A deterministic risk layer applies identical <b>confidence haircuts</b> (thin liquidity,
+        indirect mentions, repeat losses on a symbol), confidence-tiered sizing, portfolio caps,
+        cooldowns, and a per-model daily-loss halt.</li>
+      <li><b>Exits are mechanical and identical for everyone:</b> 3% stop-loss, 8% trailing stop on
+        multi-hour theses, hard time exits (1h / 6h / 72h keyed to the model's own stated
+        time-sensitivity), max 5× leverage. No model manages its own exits — the competition
+        isolates judgment about news, not trade management.</li>
+      <li>Models run <b>as they ship</b>: provider-default reasoning settings, no per-model prompt
+        tuning, deterministic structured output.</li>
+    </ul>
+    <p>The strategy thesis under test: an LLM will never out-speed HFT, so the edge must be
+    <b>high-conviction event selection</b> — recognizing which headlines actually change a regime —
+    with a good-enough entry and an hours-to-days hold. Losses are capped by the stop; winners run.</p>
+
+    <h3>Validation before going live</h3>
+    <ul>
+      <li><b>250-day replay.</b> ~2,800 real wire headlines (Sep 2025 – Jun 2026) replayed through
+        the exact production pipeline per model, against historical candles with slippage and
+        funding. Gates were picked from the full-replay PnL curve, then validated out-of-sample
+        (walk-forward split).</li>
+      <li><b>Control arms.</b> Each model's replay PnL was placed inside two null distributions run
+        through identical machinery: <b>random-direction</b> (same events, coin-flip side) and
+        <b>random-selection</b> (random subset of its own plausible reads). Finding: <b>the edge is
+        event selection, not direction</b> — the top models beat 97–100% of random-selection runs
+        while their direction calls sit near coin-flip; the asymmetric exits monetize good selection
+        even with imperfect direction.</li>
+      <li><b>Sampling stability.</b> Re-sampling each near-gate event 5×: direction almost never
+        flips (0–2%), but for most models 25–42% of near-gate reads straddle their own gate —
+        single-draw variance the leaderboard inherits.</li>
+      <li><b>Judge rubric.</b> A frontier LLM blind-grading each analysis's reasoning quality does
+        <b>not</b> predict PnL (all correlations ≈ 0 or negative). "Reads smarter" ≠ makes money, so
+        no quality score gates trades.</li>
+      <li><b>Earnings bench.</b> 441 real earnings prints (2022–2026) with minute-level exit walks:
+        all five models are net-positive on earnings reactions, with distinct confidence-calibration
+        profiles.</li>
+    </ul>
+
+    <h3>The end goal</h3>
+    <p>An apples-to-apples measurement of frontier-model judgment on live, adversarial, real-money
+    information: which model converts the same news into the most PnL under identical rules — and a
+    live test of the underlying strategy (event selection + asymmetric exits) itself. The results,
+    and what the null strategies say about <i>why</i> the winner wins, decide which model powers the
+    production trading bot next.</p>
+  </div>
+</div></div>
+
+<!-- market switcher: top-volume list + search over every tradable pair -->
+<div class="mkov" id="mkov" hidden>
+  <div class="mkbox">
+    <input id="mksearch" type="text" placeholder="Search markets …" autocomplete="off" spellcheck="false">
+    <div class="mkchips" id="mkchips"></div>
+    <div class="mklist">
+      <table class="mktab">
+        <thead><tr><th>Market</th><th class="r">Price</th><th class="r">Volume</th>
+          <th class="r">Change</th><th class="r">OI</th><th class="r">Funding</th></tr></thead>
+        <tbody id="mkrows"></tbody>
+      </table>
+    </div>
+    <div class="mkfoot"><span id="mkcount"></span><span style="margin-left:auto">[enter] select · [esc] close</span></div>
+  </div>
+</div>
+
+<script src="/static/lightweight-charts.js?v=4.1.3"></script>
+<script>
+const $=id=>document.getElementById(id);
+const COLORS={sonnet:'#d97757',gpt:'#19c37d',gemini:'#4285f4',deepseek:'#9a7cff',grok:'#e05fa0'};
+const NAMES={sonnet:'Sonnet 4.6',gpt:'GPT-5.4',gemini:'Gemini 3.5',deepseek:'DeepSeek V4',grok:'Grok 4.3'};
+const fmt=(n,d=0)=>n==null?'—':Number(n).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const usd=n=>(n<0?'-$':'+$')+fmt(Math.abs(n),0);
+const pct=n=>(n>=0?'+':'')+n.toFixed(2)+'%';
+const ago=ts=>{const s=Math.max(0,Math.floor(Date.now()/1000-ts));return s<60?s+'s':s<3600?Math.floor(s/60)+'m':Math.floor(s/3600)+'h';};
+
+let entrants=[];                 // [{key,model,gate,starting,live}]
+let arenaStart=0;                // first-analysis ms (competition start; header + usage modal)
+const keyOf={};                  // model -> key
+const colorOfModel={};           // model -> color
+const news=new Map();            // news_id -> {title,body,source,ts}
+const verdicts=new Map();        // news_id -> {model -> {dir,conf,ticker}}
+const traded=new Map();          // news_id -> {model -> {side,notional}}  (who actually entered)
+const decisions=new Map();       // news_id -> {model -> {action,reason,conf,side,notional}}
+const openPos=new Map();         // id -> position
+let lbState=[];                  // last server leaderboard rows (realized + static fields)
+
+// ===== live price chart (candles via /api/candles + live tail from HL public WS) =====
+const IVALS=['1m','5m','15m','1h','4h','1d'];
+const IVAL_SEC={'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
+const UP='#2ebd85',DOWN='#f6465d',UPV='#2ebd8555',DOWNV='#f6465d55',NEWS='#f0a020';
+const ABBR={sonnet:'S',gpt:'G',gemini:'M',deepseek:'D',grok:'K'};   // 1-char fallback tag per model
+// Real model logos (LobeHub's static icon set, vendored under /static/logos — no CDN
+// round-trip for a public page). Falls back to the colored dot / letter if one 404s.
+const LOGO_SLUG={sonnet:'claude-color',gpt:'openai',gemini:'gemini-color',
+                 deepseek:'deepseek-color',grok:'grok'};
+const LOGO_URL=k=>LOGO_SLUG[k]?`/static/logos/${LOGO_SLUG[k]}.png`:null;
+function mlogoFail(img,col){const s=document.createElement('span');s.className='mdot';
+  s.style.background=col;img.replaceWith(s);}
+function modelIcon(model,sz=14){
+  const k=keyOf[model],url=k&&LOGO_URL(k),col=colorOfModel[model]||'#888';
+  if(!url)return `<span class="mdot" style="background:${col}"></span>`;
+  return `<img class="mlogo" style="width:${sz}px;height:${sz}px" src="${url}" alt="" `+
+         `onerror="mlogoFail(this,'${col}')">`;
+}
+const LOGO_IMGS={};   // preloaded Image objects for the chart-canvas markers
+function logoImg(model){
+  const k=keyOf[model],url=k&&LOGO_URL(k);if(!url)return null;
+  let im=LOGO_IMGS[k];
+  if(!im){im=new Image();im.src=url;LOGO_IMGS[k]=im;
+    im.onload=()=>{if(marksPrim._ru)marksPrim._ru();};}   // repaint marks once it arrives
+  return (im.complete&&im.naturalWidth>0)?im:null;
+}
+let chart=null,cSeries=null,vSeries=null,chartReady=false;
+let bars=[],barsKey='';
+let wsCount=0,wsLastMs=0,wsLastTime=0;   // whitespace tail (future axis labels) bookkeeping
+let curCoin=null,curSym='',curDex='',curIval='5m',lastPx=null;
+let hlWsUrl=null,hlWs=null,hlWsUp=false,hlSubbed=[];
+let candleReq=0,histReq=null,histDone=false;
+let fgLoads=0,candleLoading=false;   // interactive candle fetches in flight / load-retry loop active
+let markets=[],marketsAt=0,marketsReq=null,mkFilter='all';
+const posLines=new Map();        // position id -> {entry,stop} price-line handles on the chart
+let closedTrades=[];             // closed positions (for entry+exit markers)
+let newsMark=null,newsLine=null; // {coin,ms,px} news focus + its dashed reference line
+const livePx={};                 // coin -> latest streamed price
+const newsPxCache={};            // coin|minute -> promise<px|null>
+const tb={prevDay:0,oracle:0,vol:0,oiUsd:0,funding:0,has:false};   // top-bar context
+let pendingFocus=null,focusSpanSec=0,focusAutoIval=false,focusNote='';
+
+// ---- formatting / icons ----
+function fmtPx(p){if(p==null||!isFinite(p))return '—';const a=Math.abs(p);
+  const d=a>=10000?1:a>=1000?2:a>=100?2:a>=10?3:a>=1?4:a>=0.1?5:a>=0.01?6:7;
+  return p.toLocaleString(undefined,{minimumFractionDigits:Math.min(d,2),maximumFractionDigits:d});}
+function fmtUsd(n){if(n==null||!isFinite(n)||n===0)return '—';const a=Math.abs(n);
+  if(a>=1e12)return '$'+(n/1e12).toFixed(2)+'t';if(a>=1e9)return '$'+(n/1e9).toFixed(2)+'b';
+  if(a>=1e6)return '$'+(n/1e6).toFixed(2)+'m';if(a>=1e3)return '$'+(n/1e3).toFixed(1)+'k';return '$'+n.toFixed(2);}
+function signpct(v,d=2){return (v>=0?'+':'')+(v||0).toFixed(d)+'%';}
+function pairLabel(m){return m.symbol+(m.dex?'-USD':'-USDC');}
+function pxFormat(px){const a=Math.abs(px||1);
+  const p=a>=10000?1:a>=1000?2:a>=100?2:a>=10?3:a>=1?4:a>=0.1?5:a>=0.01?6:7;
+  return {type:'price',precision:p,minMove:+(Math.pow(10,-p)).toFixed(p)};}
+function dotColor(s){let h=0;for(const c of s||'')h=(h*31+c.charCodeAt(0))%360;return `hsl(${h},55%,42%)`;}
+function iconSrcs(m){const nm=m.name||m.symbol;
+  if(!m.dex)return ['https://app.hyperliquid.xyz/coins/'+encodeURIComponent(nm)+'.svg',
+    'https://assets.coincap.io/assets/icons/'+(m.symbol||'').toLowerCase()+'@2x.png'];
+  return ['https://assets.parqet.com/logos/symbol/'+encodeURIComponent(m.symbol)+'?format=png&size=64'];}
+function iconHtml(m,sm){const s=iconSrcs(m);
+  return `<img class="cicon${sm?' sm':''}" src="${esc(s[0])}" data-alt="${esc(s.slice(1).join('|'))}" `
+    +`data-fsym="${esc(m.symbol)}" loading="lazy" alt="" onerror="icoErr(this)">`;}
+function icoErr(el){const alts=(el.dataset.alt||'').split('|').filter(Boolean);
+  if(alts.length){el.dataset.alt=alts.slice(1).join('|');el.src=alts[0];return;}
+  const sp=document.createElement('span');sp.className=el.className.replace('cicon','cdot');
+  sp.style.background=dotColor(el.dataset.fsym);sp.textContent=(el.dataset.fsym||'·')[0];el.replaceWith(sp);}
+
+// ---- chart timezone ----
+// Lightweight Charts renders timestamps as UTC, so we feed it "fake UTC" times shifted
+// into the selected zone (per-bar via Intl, so DST is right for each bar's own date).
+// Every bar keeps its raw `ms` — refetch-free re-shift on zone change, and all server
+// queries / history pagination stay in real epoch time.
+let chartTz=localStorage.getItem('arena_tz')||'local';
+const TZ_ZONES=['America/New_York','America/Chicago','America/Los_Angeles','Europe/London',
+  'Europe/Berlin','Europe/Moscow','Asia/Dubai','Asia/Kolkata','Asia/Singapore',
+  'Asia/Hong_Kong','Asia/Tokyo','Australia/Sydney'];
+const _tzCache={};
+function tzOffsetSec(ms,zone){zone=zone||chartTz;
+  if(zone==='utc')return 0;
+  if(zone==='local')return -new Date(ms).getTimezoneOffset()*60;
+  const h=Math.floor(ms/3600000),k=zone+'|'+h;   // offsets only change on hour boundaries
+  if(_tzCache[k]==null){
+    try{const d=new Date(h*3600000),g={};
+      new Intl.DateTimeFormat('en-US',{timeZone:zone,hour12:false,year:'numeric',month:'2-digit',
+        day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).formatToParts(d)
+        .forEach(p=>g[p.type]=p.value);
+      _tzCache[k]=(Date.UTC(+g.year,+g.month-1,+g.day,+g.hour%24,+g.minute,+g.second)-d.getTime())/1000;
+    }catch(e){_tzCache[k]=0;}   // unknown zone name -> behave like UTC
+  }
+  return _tzCache[k];
+}
+function toChartSec(ms){return Math.floor(ms/1000)+tzOffsetSec(ms);}
+function tzOffStr(z){const s=tzOffsetSec(Date.now(),z);if(!s)return 'UTC';
+  const a=Math.abs(s),mm=Math.round(a%3600/60);
+  return 'UTC'+(s<0?'-':'+')+Math.floor(a/3600)+(mm?':'+String(mm).padStart(2,'0'):'');}
+function renderTzSel(){
+  const zones=[['local','Local'],['utc','UTC']].concat(
+    TZ_ZONES.map(z=>[z,z.split('/').pop().replace(/_/g,' ')]));
+  if(!zones.some(([v])=>v===chartTz))chartTz='local';   // stale/unknown persisted value
+  $('tzsel').innerHTML=zones.map(([v,l])=>
+    `<option value="${v}"${v===chartTz?' selected':''}>${l}${v==='utc'?'':' ('+tzOffStr(v)+')'}</option>`).join('');
+}
+
+function findMarket(name){return markets.find(m=>m.name===name);}
+function marketBySym(sym,klass){sym=(sym||'').replace(/^\$/,'').trim().toUpperCase();if(!sym)return null;
+  let c=markets.filter(m=>m.symbol===sym);
+  if(c.length>1&&klass){const want=klass==='crypto'?(m=>m.dex===''):(m=>m.dex!=='');
+    const f=c.filter(want);if(f.length)c=f;}
+  return c[0]||null;}
+function curPxOf(coin){if(livePx[coin]!=null)return livePx[coin];const m=findMarket(coin);return (m&&m.px)?m.px:null;}
+
+function initChart(){
+  if(chartReady) return;
+  const el=$('chart');
+  if(!window.LightweightCharts){$('cmsg').textContent='chart library failed to load';return;}
+  const LWC=window.LightweightCharts;
+  chart=LWC.createChart(el,{autoSize:true,
+    layout:{background:{type:'solid',color:'transparent'},textColor:'#8a93a4',fontSize:11,
+      fontFamily:'-apple-system,Inter,Segoe UI,sans-serif'},
+    grid:{vertLines:{color:'#151b28'},horzLines:{color:'#151b28'}},
+    rightPriceScale:{borderColor:'#1d2535'},
+    timeScale:{borderColor:'#1d2535',timeVisible:true,secondsVisible:false,rightOffset:4},
+    crosshair:{mode:LWC.CrosshairMode?LWC.CrosshairMode.Normal:0}});
+  cSeries=chart.addCandlestickSeries({upColor:UP,downColor:DOWN,wickUpColor:UP,wickDownColor:DOWN,borderVisible:false});
+  cSeries.priceScale().applyOptions({scaleMargins:{top:.08,bottom:.24}});
+  if(cSeries.attachPrimitive)cSeries.attachPrimitive(marksPrim);
+  vSeries=chart.addHistogramSeries({priceScaleId:'vol',priceFormat:{type:'volume'},lastValueVisible:false,priceLineVisible:false});
+  chart.priceScale('vol').applyOptions({scaleMargins:{top:.84,bottom:0}});
+  chart.timeScale().subscribeVisibleLogicalRangeChange(r=>{if(!r)return;
+    // Prefetch history well BEFORE the left edge shows (≈one viewport of buffer), sized to
+    // the zoom level, so panning/zooming out rarely waits on a round-trip (TradingView-style).
+    const span=Math.max(60,r.to-r.from);
+    if(r.from<span)loadOlder(Math.ceil(span*2.5)+300);
+    if(bars.length&&r.to>bars.length+wsCount-40)extendFuture(250);
+    positionNpop();});   // the headline popover tracks its dot while panning/zooming
+  chart.subscribeClick(p=>{   // dot toggles the headline box; clicks elsewhere leave it alone
+    if(nearNewsDot(p&&p.point)){if($('npop').hidden)showNpop();else hideNpop();}});
+  chart.subscribeCrosshairMove(p=>{
+    $('chart').style.cursor=nearNewsDot(p&&p.point)?'pointer':'';});
+  chartReady=true;renderIvals();renderTzSel();renderRanges();applyYMode();syncYAuto();tickFoot();
+}
+function renderIvals(){
+  $('ivals').innerHTML=IVALS.map(iv=>`<button class="iv${iv===curIval?' on':''}" data-iv="${iv}">${iv}</button>`).join('');
+}
+
+// ---- top bar ----
+function tbFromMarket(m){tb.prevDay=m.prev_day_px;tb.oracle=m.oracle_px;tb.vol=m.day_ntl_vlm;
+  tb.oiUsd=m.open_interest_usd;tb.funding=m.funding;tb.has=true;if(lastPx==null&&m.px)lastPx=m.px;tbRender();}
+function tbRender(){
+  const chg=(tb.prevDay>0&&lastPx)?(lastPx-tb.prevDay)/tb.prevDay*100:null;
+  const cls=chg==null?'':(chg>=0?'up':'dn');
+  const last=$('c-last');last.textContent=lastPx!=null?fmtPx(lastPx):'—';last.className=cls;
+  const c=$('c-chg');c.textContent=chg==null?'—':signpct(chg,2);c.className=cls;
+  $('c-index').textContent=tb.oracle?fmtPx(tb.oracle):'—';
+  $('c-vol').textContent=fmtUsd(tb.vol);$('c-oi').textContent=fmtUsd(tb.oiUsd);
+  const f=$('c-fund');f.textContent=tb.has?(tb.funding*100).toFixed(4)+'%':'—';
+  f.className=(tb.has&&tb.funding<0)?'dn':(tb.has?'up':'');
+}
+function setLast(px){if(px!=null&&isFinite(px)){lastPx=px;tbRender();}}
+
+function selectMarket(name,sym,dex){
+  if(chartReady)hideNpop();   // popover belongs to the previous coin's dot
+  curCoin=name;curSym=sym||(name||'').split(':').pop();curDex=dex||(name&&name.includes(':')?name.split(':')[0]:'');
+  persistChart();
+  const m=findMarket(name)||{name,symbol:curSym,dex:curDex};
+  $('c-pair').textContent=pairLabel(m);$('c-ico').innerHTML=iconHtml(m,false);
+  const db=$('c-dexb');if(curDex){db.textContent=curDex.toUpperCase();db.style.display='';}else db.style.display='none';
+  renderIvals();
+  lastPx=null;tb.prevDay=tb.oracle=tb.vol=tb.oiUsd=tb.funding=0;tb.has=false;
+  const row=findMarket(curCoin);if(row)tbFromMarket(row);else tbRender();
+  loadCandles();hlResub();
+}
+
+// ---- candles ----
+function mapBar(c){return {ms:+c.t,time:toChartSec(+c.t),open:+c.o,high:+c.h,low:+c.l,close:+c.c,vol:+c.v};}
+const FUTURE_BARS=250;
+function setSeriesData(){
+  // Strictly-ascending guard: a DST fall-back hour maps two raw hours to one wall-clock
+  // hour under the tz shift; LWC's setData throws on non-ascending times, so drop dups.
+  const cd=[],vd=[];let prev=-Infinity;
+  for(const b of bars){if(b.time<=prev)continue;prev=b.time;
+    cd.push({time:b.time,open:b.open,high:b.high,low:b.low,close:b.close});
+    vd.push({time:b.time,value:b.vol,color:b.close>=b.open?UPV:DOWNV});}
+  // Whitespace tail: future time points past the last candle so the axis keeps date/time
+  // labels (and free scroll room) to the right; live candles overwrite them via update().
+  wsCount=0;wsLastMs=0;wsLastTime=prev;
+  if(bars.length){const iv=(IVAL_SEC[curIval]||300)*1000,base=bars[bars.length-1].ms;
+    for(let i=1;i<=FUTURE_BARS;i++){const ms=base+i*iv,t=toChartSec(ms);
+      if(t<=prev)continue;prev=t;cd.push({time:t});wsCount++;wsLastMs=ms;wsLastTime=t;}}
+  cSeries.setData(cd);vSeries.setData(vd);
+}
+function extendFuture(n){   // scrolled near the whitespace horizon: push it further out
+  if(!chartReady||!wsLastMs)return;
+  const iv=(IVAL_SEC[curIval]||300)*1000;let ms=wsLastMs;
+  for(let i=0;i<n;i++){ms+=iv;const t=toChartSec(ms);
+    if(t<=wsLastTime)continue;
+    cSeries.update({time:t});wsLastTime=t;wsCount++;}
+  wsLastMs=ms;
+}
+
+// ---- bottom-bar time ranges (most recent span; auto-picks a sane candle interval) ----
+const RANGES=[['1y',31536000,'1d'],['6m',15811200,'1d'],['3m',7776000,'4h'],
+              ['1m',2592000,'4h'],['5d',432000,'15m'],['1d',86400,'5m']];
+let curRange=null,pendingRangeSec=null;
+function renderRanges(){$('ranges').innerHTML=RANGES.map(([k])=>
+  `<button class="rng${k===curRange?' on':''}" data-r="${k}">${k}</button>`).join('');}
+async function applyRange(spanSec){
+  if(!chartReady||!bars.length)return;
+  const key=barsKey;
+  await ensureHistory(Date.now()-spanSec*1000);
+  if(barsKey!==key||!bars.length)return;   // coin/interval changed mid-load
+  const cutMs=Date.now()-spanSec*1000;
+  let lo=0,hi=bars.length-1,idx=bars.length-1;   // first bar inside the span
+  while(lo<=hi){const mid=(lo+hi)>>1;if(bars[mid].ms>=cutMs){idx=mid;hi=mid-1;}else lo=mid+1;}
+  const pad=Math.max(5,Math.round((bars.length-idx)*0.05));   // breathing room on the right
+  try{chart.timeScale().setVisibleLogicalRange({from:idx-0.5,to:bars.length-1+pad});}catch(e){}
+}
+
+// ---- Y-axis scale toggles (%, log; auto = LWC autoScale) ----
+let yMode=localStorage.getItem('arena_ymode')||'normal';
+function applyYMode(){if(!chartReady)return;
+  cSeries.priceScale().applyOptions({mode:yMode==='log'?1:yMode==='pct'?2:0});   // LWC PriceScaleMode
+  $('y-pct').classList.toggle('on',yMode==='pct');
+  $('y-log').classList.toggle('on',yMode==='log');}
+function setYMode(m){yMode=yMode===m?'normal':m;   // active toggle clicks back to normal
+  try{localStorage.setItem('arena_ymode',yMode);}catch(e){}applyYMode();}
+function syncYAuto(){if(!chartReady)return;   // dragging the scale flips autoScale off internally
+  try{$('y-auto').classList.toggle('on',!!cSeries.priceScale().options().autoScale);}catch(e){}}
+
+// ---- bottom-bar clock (current wall time in the selected chart timezone) ----
+function tzNowStr(){
+  const opt={hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'};
+  if(chartTz==='utc')opt.timeZone='UTC';else if(chartTz!=='local')opt.timeZone=chartTz;
+  try{return new Date().toLocaleTimeString('en-GB',opt);}catch(e){return '';}
+}
+function tickFoot(){$('tznow').textContent=tzNowStr();syncYAuto();}
+async function loadCandles(){
+  if(!chartReady||!curCoin) return;
+  const reqId=++candleReq,coin=curCoin,ival=curIval;
+  const msg=$('cmsg');msg.style.display='';msg.textContent='loading '+curSym+' …';
+  candleLoading=true;
+  // A failed fetch (rate limit, upstream hiccup, network) is NOT "no candle data" — retry
+  // with backoff until the user moves on (reqId guard aborts on any coin/interval switch).
+  // An OK-but-empty response is re-asked a couple of times too before it's believed: a
+  // transient upstream error can serialize as [] and must not park a permanent message.
+  let data=null,empties=0;
+  for(let attempt=0;;attempt++){
+    data=null;fgLoads++;
+    try{let url=`/api/candles?coin=${encodeURIComponent(coin)}&interval=${ival}`;
+      if(pendingFocus){const iv=IVAL_SEC[ival]||300;
+        url+='&start='+Math.min(pendingFocus-250*iv*1000,Date.now()-500*iv*1000);}
+      const r=await fetch(url);
+      if(r.ok){const d=await r.json();if(Array.isArray(d))data=d;}
+    }catch(e){}
+    finally{fgLoads=Math.max(0,fgLoads-1);}
+    if(reqId!==candleReq) return;
+    if(data&&data.length)break;
+    if(data&&++empties>2)break;
+    msg.textContent='loading '+curSym+' … (retrying)';
+    await new Promise(res=>setTimeout(res,Math.min(10000,1000*Math.pow(2,attempt))));
+    if(reqId!==candleReq) return;
+  }
+  candleLoading=false;
+  bars=data.map(mapBar).sort((a,b)=>a.time-b.time);
+  barsKey=coin+'|'+ival;histReq=null;histDone=false;
+  cSeries.applyOptions({priceFormat:pxFormat(bars.length?bars[bars.length-1].close:1)});
+  cSeries.priceScale().applyOptions({autoScale:true});
+  setSeriesData();
+  if(bars.length){setLast(bars[bars.length-1].close);
+    if(pendingRangeSec){const s=pendingRangeSec;pendingRangeSec=null;applyRange(s);}
+    else if(!pendingFocus){
+      chart.timeScale().setVisibleLogicalRange({from:Math.max(0,bars.length-140),to:bars.length+6});
+      if(curRange){curRange=null;renderRanges();}}   // default view: stale range highlight off
+    msg.style.display='none';
+  }else{msg.textContent='no candle data for '+curSym;}
+  buildMarkers();buildPosLines();buildNewsLine();applyFocus();
+}
+async function loadOlder(want){
+  if(histDone||!chartReady||!bars.length) return;
+  if(histReq) return histReq;   // join the in-flight page (ensureHistory awaits real progress)
+  const key=barsKey,n=Math.min(4500,Math.max(500,want||500));   // server clamps at 5000
+  histReq=(async()=>{
+    fgLoads++;
+    try{
+      const endMs=bars[0].ms-1, start=endMs-(IVAL_SEC[curIval]||300)*1000*n;
+      const r=await fetch(`/api/candles?coin=${encodeURIComponent(curCoin)}&interval=${curIval}&start=${start}&end=${endMs}`);
+      if(!r.ok) return;let d=await r.json();
+      if(barsKey!==key||!Array.isArray(d)) return;
+      const older=d.map(mapBar).filter(b=>b.ms<bars[0].ms).sort((a,b)=>a.time-b.time);
+      if(!older.length){histDone=true;return;}
+      // Preserve the exact zoom/pan via the LOGICAL range shifted by the prepended count.
+      // (setVisibleRange is time-based and clamps to the data extent, so when zoomed out
+      // with whitespace at the edges it snapped the candles to fill the whole pane.)
+      const lr=chart.timeScale().getVisibleLogicalRange();
+      bars=older.concat(bars);setSeriesData();
+      if(lr)try{chart.timeScale().setVisibleLogicalRange(
+        {from:lr.from+older.length,to:lr.to+older.length});}catch(e){}
+      buildMarkers();
+    }catch(e){}
+    finally{fgLoads=Math.max(0,fgLoads-1);}
+  })();
+  histReq.finally(()=>{histReq=null;});
+  return histReq;
+}
+function applyCandle(c){
+  if(!chartReady||!c||barsKey!==curCoin+'|'+curIval) return;
+  if(c.s!==curCoin||c.i!==curIval) return;
+  const t=toChartSec(+c.t),b={ms:+c.t,time:t,open:+c.o,high:+c.h,low:+c.l,close:+c.c,vol:+c.v};
+  const last=bars[bars.length-1];
+  if(!last||t>last.time){bars.push(b);if(wsLastMs&&b.ms<=wsLastMs&&wsCount>0)wsCount--;
+    // First data on a chart that declared "no candle data": the live stream just proved
+    // otherwise — drop the stale message (an active load-retry keeps its own note).
+    if(bars.length===1&&!candleLoading)$('cmsg').style.display='none';}
+  else if(t===last.time)bars[bars.length-1]=b;else return;
+  cSeries.update({time:b.time,open:b.open,high:b.high,low:b.low,close:b.close});
+  vSeries.update({time:b.time,value:b.vol,color:b.close>=b.open?UPV:DOWNV});
+  setLast(b.close);livePx[curCoin]=b.close;fastPaint(curCoin);updateNewsLine();
+  if(!last||t>last.time)buildMarkers();
+}
+
+// ---- per-model entry/exit markers (custom canvas primitive: model-colored dot, green=buy /
+// red=sell ring, model letter; stacked when several land on one candle) ----
+function snapBar(ms){if(!bars.length||!ms)return null;const t=toChartSec(ms);
+  if(t<bars[0].time)return null;let lo=0,hi=bars.length-1,ans=bars[0].time;
+  while(lo<=hi){const mid=(lo+hi)>>1;if(bars[mid].time<=t){ans=bars[mid].time;lo=mid+1;}else hi=mid-1;}return ans;}
+function barAt(tSec){let lo=0,hi=bars.length-1;
+  while(lo<=hi){const mid=(lo+hi)>>1,t=bars[mid].time;if(t===tSec)return bars[mid];if(t<tSec)lo=mid+1;else hi=mid-1;}return null;}
+function drawMarks(ctx){
+  if(!chartReady)return;const tsc=chart.timeScale(),stack={};
+  marksPrim._dot=null;   // news-dot hit-target for the click/hover handlers (pane coords)
+  for(const m of marksPrim._marks){
+    const bar=barAt(m.time);if(!bar)continue;const x=tsc.timeToCoordinate(m.time);if(x==null)continue;
+    if(m.dot){const y=cSeries.priceToCoordinate(bar.low);if(y==null)continue;
+      ctx.beginPath();ctx.arc(x,y+10,4.5,0,2*Math.PI);ctx.fillStyle=m.color;ctx.fill();
+      ctx.lineWidth=1.5;ctx.strokeStyle=NEWS+'55';ctx.stroke();
+      marksPrim._dot={x,y:y+10};continue;}
+    const below=m.isBuy,kk=m.time+'|'+(below?'b':'a'),n=stack[kk]=(stack[kk]||0)+1;
+    const y0=cSeries.priceToCoordinate(below?bar.low:bar.high);if(y0==null)continue;
+    const y=y0+(below?1:-1)*(16+(n-1)*19),col=colorOfModel[m.model]||'#9aa';
+    const img=logoImg(m.model);   // real model logo; colored dot+letter until it loads
+    ctx.beginPath();ctx.arc(x,y,9,0,2*Math.PI);ctx.fillStyle=img?'#171c26':col;ctx.fill();
+    ctx.lineWidth=2.5;ctx.strokeStyle=m.isBuy?UP:DOWN;ctx.stroke();
+    if(img){ctx.drawImage(img,x-6,y-6,12,12);}
+    else{ctx.fillStyle='#fff';ctx.font='bold 9px Inter,-apple-system,Segoe UI,sans-serif';
+      ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(ABBR[keyOf[m.model]]||'?',x,y+0.5);}
+  }
+}
+const marksRenderer={draw:tg=>tg.useMediaCoordinateSpace(s=>drawMarks(s.context))};
+const marksPane={zOrder:()=>'top',renderer:()=>marksRenderer};
+const marksPrim={_marks:[],_ru:null,attached(p){this._ru=p.requestUpdate;},detached(){this._ru=null;},
+  setMarks(m){this._marks=m;if(this._ru)this._ru();},updateAllViews(){},paneViews(){return [marksPane];}};
+function buildMarkers(){
+  if(!chartReady||!curCoin)return;const marks=[];
+  const add=(ms,model,isBuy)=>{const t=snapBar(ms);if(t==null)return;marks.push({time:t,model,isBuy});};
+  openPos.forEach(p=>{if(p.market===curCoin)add(p.opened_ms,p.model_id,p.side==='long');});
+  closedTrades.forEach(p=>{if(p.market===curCoin){add(p.opened_ms,p.model_id,p.side==='long');
+    add(p.closed_ms,p.model_id,p.side!=='long');}});
+  if(newsMark&&newsMark.coin===curCoin){const t=snapBar(newsMark.ms);if(t!=null)marks.push({time:t,dot:true,color:NEWS});}
+  marks.sort((a,b)=>a.time-b.time);
+  if(cSeries.attachPrimitive)marksPrim.setMarks(marks);
+  else cSeries.setMarkers(marks.filter(m=>!m.dot).map(m=>({time:m.time,position:m.isBuy?'belowBar':'aboveBar',
+    color:colorOfModel[m.model]||'#9aa',shape:'circle',text:ABBR[keyOf[m.model]]||'?',size:1})));
+}
+function onTradeMark(){if(chartReady&&curCoin){buildMarkers();buildPosLines();}hlResub();}
+
+// ---- entry/stop price lines (per open position on the charted coin, model-colored) ----
+function pnlK(v){const a=Math.abs(v||0),s=(v>=0?'+$':'-$');return a>=1000?s+(a/1000).toFixed(1)+'K':s+a.toFixed(0);}
+function entryTitle(p){const k=keyOf[p.model_id]||'';
+  return `${k} ${(p.side||'').toUpperCase()}${p.upnl!=null?' '+pnlK(p.upnl):''}`;}
+function buildPosLines(){   // structural rebuild (coin switch / open / close)
+  posLines.forEach(L=>{try{cSeries.removePriceLine(L.entry);if(L.stop)cSeries.removePriceLine(L.stop);}catch(e){}});
+  posLines.clear();
+  if(!chartReady||!curCoin) return;
+  [...openPos.values()].filter(p=>p.market===curCoin).forEach(p=>{
+    const col=colorOfModel[p.model_id]||'#9aa',k=keyOf[p.model_id]||'';
+    const entry=cSeries.createPriceLine({price:+p.entry_px,color:col,lineWidth:2,lineStyle:0,
+      axisLabelVisible:true,title:entryTitle(p)});
+    const stop=p.stop_loss?cSeries.createPriceLine({price:+p.stop_loss,color:col,lineWidth:1,lineStyle:2,
+      axisLabelVisible:false,title:`${k} SL`}):null;
+    posLines.set(p.id,{entry,stop});
+  });
+}
+function updatePosLines(){   // cheap per-tick: just refresh the live PnL label on existing lines
+  openPos.forEach(p=>{const L=posLines.get(p.id);if(L&&p.market===curCoin)L.entry.applyOptions({title:entryTitle(p)});});
+}
+
+// ---- fast live uPnL sync ----
+// Every streamed price (candle for the charted coin, activeAssetCtx for each open-position coin)
+// re-marks every position on that coin from the SAME live price, then refreshes the positions
+// tab + chart entry-line labels + the leaderboard together — coalesced to one animation frame —
+// so all three stay consistent sub-second instead of drifting on the bot's 3s/30s cadences.
+let _paintReq=false;
+// ---- per-position derived metrics (single source of truth for render + live repaint) ----
+function upnlOf(p){return p.upnl??p.pnl_usd??0;}
+function marginOf(p){const lev=p.leverage||1;return (p.notional_usd||p.notional||0)/(lev||1);}
+function roeOf(p){const m=marginOf(p);return m?upnlOf(p)/m*100:0;}        // return on margin (leveraged %)
+function stopOf(p){return (p.eff_stop!=null?p.eff_stop:p.stop_loss)||0;}
+function isTrailing(p){return (p.trail_pct||0)>0 && p.eff_stop!=null
+  && Math.abs(p.eff_stop-(p.stop_loss||0))>1e-9;}
+function cushionPct(p){const s=stopOf(p),mk=p.mark||p.entry_px;if(!s||!mk)return null;
+  return p.side==='long'?(mk-s)/mk*100:(s-mk)/mk*100;}                    // how far price can move before the stop
+function fundingOf(p){return p.funding!=null?p.funding:(p.funding_usd||0);}  // + = cost paid
+function fmtDur(ms){if(ms==null||!isFinite(ms))return '—';if(ms<=0)return 'due';
+  const s=Math.floor(ms/1000),d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);
+  if(d>0)return d+'d '+h+'h';if(h>0)return h+'h '+m+'m';return m+'m '+(s%60)+'s';}
+function stopHtml(p){const s=stopOf(p),c=cushionPct(p);
+  return fmtPx(s)+(c!=null?` <span class="sub">${c.toFixed(1)}%</span>`:'');}
+function fundHtml(p){const f=fundingOf(p);return usd(-f);}  // show as PnL impact (cost negative)
+
+function paintPositionsPnl(){   // cheap per-tick: update just the live numbers, not the whole card
+  openPos.forEach(p=>{
+    const up=upnlOf(p), el=$('upnl-'+p.id); if(!el)return;
+    el.textContent=usd(up);el.className='ret '+(up>=0?'pos':'neg');
+    const r=$('roe-'+p.id);if(r){const v=roeOf(p);r.textContent=signpct(v,1);r.className='v '+(v>=0?'pos':'neg');}
+    const st=$('stop-'+p.id);if(st)st.innerHTML=stopHtml(p);
+    const mk=$('mark-'+p.id);if(mk)mk.textContent=fmtPx(p.mark||p.entry_px);
+    const fn=$('fund-'+p.id);if(fn){const f=fundingOf(p);fn.textContent=fundHtml(p);
+      fn.className='v '+(f>0?'neg':f<0?'pos':'mut');}
+  });}
+function updatePosTimers(){const now=Date.now();
+  openPos.forEach(p=>{const el=$('te-'+p.id);if(el&&p.time_exit_ms)el.textContent=fmtDur(p.time_exit_ms-now);});}
+function schedulePaint(){if(_paintReq)return;_paintReq=true;
+  requestAnimationFrame(()=>{_paintReq=false;paintPositionsPnl();updatePosLines();repaintLeaderboard();});}
+function fastPaint(coin){
+  const px=livePx[coin];if(px==null||!openPos.size)return;
+  let dirty=false;
+  openPos.forEach(p=>{if(p.market!==coin||!p.size)return;
+    const upnl=(px-p.entry_px)*p.size*(p.side==='long'?1:-1);
+    if(p.mark===px&&p.upnl!=null&&Math.abs(p.upnl-upnl)<1e-9)return;
+    p.mark=px;p.upnl=upnl;dirty=true;});
+  if(dirty)schedulePaint();
+}
+
+// ---- news reference line + price-since-news ticker boxes ----
+// Background candle-fetch pacing: the server rate-limits /api/candles per IP, and feed
+// enrichment (dozens of tickers × price lookups) can burn that whole budget right when
+// the user clicks a ticker — the interactive chart load must never queue behind it. Hold
+// background lookups while any foreground candle fetch is in flight, and cap their spend
+// well under the server's window so clicks always have headroom.
+const bgHits=[];
+async function bgSlot(){
+  for(;;){const now=Date.now();
+    while(bgHits.length&&now-bgHits[0]>60000)bgHits.shift();
+    if(!fgLoads&&bgHits.length<20){bgHits.push(now);return;}
+    await new Promise(r=>setTimeout(r,250+Math.random()*250));}
+}
+function newsPxAt(coin,ms,bg){if(!coin||!ms)return Promise.resolve(null);
+  const key=coin+'|'+Math.floor(ms/60000);if(newsPxCache[key])return newsPxCache[key];
+  newsPxCache[key]=(async()=>{let failed=false;
+    for(const [iv,sec] of [['1m',60],['1h',3600],['1d',86400]]){
+      if(iv!=='1d'&&!ivalReaches(iv,ms))continue;   // retention can't reach back that far — skip the guaranteed miss
+      if(bg)await bgSlot();
+      try{const r=await fetch(`/api/candles?coin=${encodeURIComponent(coin)}&interval=${iv}&start=${ms-2*sec*1000}&end=${ms+sec*1000}`);
+        if(!r.ok){failed=true;continue;}const d=await r.json();
+        if(Array.isArray(d)&&d.length){let best=d[0];for(const c of d)if(+c.t<=ms)best=c;
+          const px=+best.o||+best.c;if(px)return px;}}catch(e){failed=true;}}
+    // Only a clean "no bars there" caches as null; a transient failure (rate limit,
+    // network) uncaches itself so a later render pass retries instead of blanking forever.
+    if(failed)delete newsPxCache[key];
+    return null;})();
+  return newsPxCache[key];}
+function newsLineTitle(){const cur=lastPx!=null?lastPx:curPxOf(curCoin);
+  if(!newsMark||!newsMark.px||cur==null)return 'news';return signpct((cur-newsMark.px)/newsMark.px*100,2);}
+function buildNewsLine(){if(!chartReady)return;
+  if(newsLine){try{cSeries.removePriceLine(newsLine);}catch(e){}newsLine=null;}
+  if(!newsMark||newsMark.coin!==curCoin||!newsMark.px)return;
+  newsLine=cSeries.createPriceLine({price:newsMark.px,color:NEWS,lineWidth:1,lineStyle:2,axisLabelVisible:true,title:newsLineTitle()});}
+function updateNewsLine(){if(newsLine)newsLine.applyOptions({title:newsLineTitle()});}
+
+// ---- news-dot popover: the headline at the yellow marker's timestamp. Opens on news
+// focus (and on dot click), follows the dot until the user DRAGS it somewhere — after
+// that it stays where they parked it; only ×/ESC close it. ----
+let npopMoved=false,npopDrag=null;
+function npopXY(){   // dot position in pane coords, straight from the scales (draw-order-free)
+  if(!newsMark||newsMark.coin!==curCoin||!chartReady||!bars.length)return null;
+  const t=snapBar(newsMark.ms);if(t==null)return null;const bar=barAt(t);if(!bar)return null;
+  const x=chart.timeScale().timeToCoordinate(t),y=cSeries.priceToCoordinate(bar.low);
+  return (x==null||y==null)?null:{x,y:y+10};}
+function hideNpop(){$('npop').hidden=true;}
+function showNpop(){
+  if(!newsMark)return;const n=news.get(newsMark.id)||{},el=$('npop');
+  const when=new Date(newsMark.ms).toLocaleString(undefined,
+    {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  el.innerHTML=`<span class="x" id="npopx" title="Close">×</span>
+    <div class="t">${esc(headlineOf(n)||'headline no longer loaded — see the feed')}</div>
+    <div class="s">${when}</div>`;
+  npopMoved=false;el.hidden=false;
+  if(npopXY())positionNpop();
+  else{el.style.left='12px';el.style.top='12px';}   // dot not on screen yet: park top-left
+}
+function positionNpop(){   // dock next to the dot — until the user has dragged it away
+  const el=$('npop');if(el.hidden||npopMoved||npopDrag)return;
+  const d=npopXY();if(!d)return;   // dot scrolled off: stay put (manual close only)
+  const W=$('chart').clientWidth,H=$('chart').clientHeight,w=el.offsetWidth,h=el.offsetHeight;
+  let y=d.y+14;if(y+h>H-8)y=d.y-14-h;   // prefer below the dot (under the candles); flip up if cramped
+  el.style.left=Math.min(Math.max(6,d.x-w/2),Math.max(6,W-w-6))+'px';
+  el.style.top=Math.max(6,y)+'px';}
+function nearNewsDot(pt){const d=pt&&marksPrim._dot;
+  return !!(d&&Math.hypot(pt.x-d.x,pt.y-d.y)<=12);}
+$('npop').addEventListener('click',e=>{e.stopPropagation();
+  if(e.target.id==='npopx')hideNpop();});
+$('npop').addEventListener('pointerdown',e=>{
+  if(e.target.id==='npopx')return;
+  const el=$('npop');   // geometry cached once — pointermove is a pure style write
+  npopDrag={sx:e.clientX,sy:e.clientY,ox:el.offsetLeft,oy:el.offsetTop,
+    mx:Math.max(0,$('chart').clientWidth-el.offsetWidth),
+    my:Math.max(0,$('chart').clientHeight-el.offsetHeight)};
+  el.setPointerCapture(e.pointerId);e.preventDefault();});
+$('npop').addEventListener('pointermove',e=>{
+  if(!npopDrag)return;const el=$('npop');npopMoved=true;
+  el.style.left=Math.min(Math.max(0,npopDrag.ox+e.clientX-npopDrag.sx),npopDrag.mx)+'px';
+  el.style.top=Math.min(Math.max(0,npopDrag.oy+e.clientY-npopDrag.sy),npopDrag.my)+'px';});
+$('npop').addEventListener('pointerup',()=>{npopDrag=null;});
+$('npop').addEventListener('pointercancel',()=>{npopDrag=null;});
+async function chartToNews(coin,ms,id){if(!coin||!ms)return;
+  // Jump + open the headline box IMMEDIATELY; the news-time reference price arrives async.
+  // (Awaiting it first let a mid-fetch chart switch yank the view back and resurrect the box.)
+  newsMark={coin,ms,px:0,id:id||''};
+  chartTo(coin,ms);if(coin===curCoin){buildMarkers();buildNewsLine();}
+  showNpop();
+  const px=await newsPxAt(coin,ms)||0;
+  if(px&&newsMark&&newsMark.coin===coin&&newsMark.ms===ms){newsMark.px=px;
+    if(coin===curCoin)buildNewsLine();}}
+// the assets a headline implicates = the union of tickers the 5 models picked + $cashtags
+function rowTickers(id){const vs=verdicts.get(id)||{},n=news.get(id)||{},out=[],seen=new Set();
+  const add=(sym,klass)=>{const m=marketBySym(sym,klass);if(m&&!seen.has(m.name)){seen.add(m.name);out.push(m);}};
+  for(const mdl in vs)if(vs[mdl].ticker)add(vs[mdl].ticker,vs[mdl].aclass);
+  for(const c of ((n.title||'')+' '+(n.body||'')).matchAll(/\$([A-Za-z]{2,10})(?![A-Za-z0-9])/g))add(c[1],'');
+  return out.slice(0,6);}
+function ticksHtml(id){const t=(news.get(id)||{}).ts||0,list=t?rowTickers(id):[];
+  if(!list.length)return '';
+  return '<div class="nticks">'+list.map(m=>
+    `<button class="ntick" data-newscoin="${esc(m.name)}" data-newst="${t}" data-newsid="${esc(id)}" title="Show ${esc(m.symbol)} at news time">
+      ${iconHtml(m,true)}<b>${esc(m.symbol)}</b><span class="nt-pct"></span>
+      <span class="nt-sub" hidden><span class="nt-then">—</span>→<span class="nt-now">—</span></span></button>`).join('')+'</div>';}
+function paintNTick(el){const npx=+el.dataset.newspx||0,cur=curPxOf(el.dataset.newscoin);
+  const pc=el.querySelector('.nt-pct'),sub=el.querySelector('.nt-sub');
+  // No news-time price (older items predate the coin's candle history): just the bare
+  // ticker link — a row of dashes reads as breakage, not data.
+  if(!npx){pc.textContent='';pc.className='nt-pct';sub.hidden=true;return;}
+  sub.hidden=false;
+  el.querySelector('.nt-then').textContent=fmtPx(npx);
+  el.querySelector('.nt-now').textContent=cur!=null?fmtPx(cur):'—';
+  if(cur!=null){const d=(cur-npx)/npx*100;pc.textContent=signpct(d,2);pc.className='nt-pct '+(d>=0?'up':'dn');}
+  else{pc.textContent='';pc.className='nt-pct';}}
+async function fillNewsTicks(root){
+  const els=[...root.querySelectorAll('.ntick')];
+  els.forEach(paintNTick);
+  // Fetch the missing news-time prices a few at a time (a serial walk over a long feed
+  // took minutes; newsPxAt dedupes via its promise cache so re-renders stay free).
+  const need=els.filter(el=>!el.dataset.newspx);let i=0;
+  const worker=async()=>{while(i<need.length){const el=need[i++];
+    const px=await newsPxAt(el.dataset.newscoin,+el.dataset.newst||0,true);
+    if(!el.isConnected)continue;if(px)el.dataset.newspx=px;paintNTick(el);}};
+  await Promise.all([worker(),worker(),worker(),worker()]);}
+
+// ---- snap-to-time focus (ticker / news click) ----
+function ivalSec(){return IVAL_SEC[curIval]||300;}
+function visSpanSec(){try{const r=chart&&chart.timeScale().getVisibleLogicalRange();
+  return r?Math.max(20,r.to-r.from)*ivalSec():0;}catch(e){return 0;}}
+function ivalReaches(iv,ms){return ms>Date.now()-IVAL_SEC[iv]*4500*1000;}
+function cNote(t){const m=$('cmsg');m.textContent=t;m.style.display='';clearTimeout(cNote._t);
+  cNote._t=setTimeout(()=>{m.style.display='none';},4000);}
+function chartTo(name,focusMs){if(!name)return;closeMk();
+  pendingRangeSec=null;if(curRange){curRange=null;renderRanges();}
+  pendingFocus=focusMs||null;focusAutoIval=!!focusMs;focusSpanSec=visSpanSec();
+  if(name===curCoin){applyFocus();return;}
+  const m=findMarket(name)||{name,symbol:name.split(':').pop().toUpperCase(),
+    dex:name.includes(':')?name.split(':')[0]:'',asset_class:name.includes(':')?'equity':'crypto'};
+  selectMarket(m.name,m.symbol,m.dex);}
+function chartToSym(sym,klass){const m=marketBySym(sym,klass);if(m)chartTo(m.name);}
+async function ensureHistory(toMs,padMs){const pad=Math.max(padMs||0,50*ivalSec()*1000);let rounds=8;
+  while(rounds-->0&&bars.length&&bars[0].ms>toMs&&!histDone){const before=bars[0].ms;
+    const need=Math.ceil((before-toMs+pad)/(ivalSec()*1000))+20;   // one right-sized page, not 8 fixed ones
+    await loadOlder(need);if(!bars.length||bars[0].ms>=before)break;}}
+async function applyFocus(){
+  const f=pendingFocus;if(!f||!chartReady||!bars.length)return;
+  const key=barsKey,iv0=ivalSec(),span0=Math.min(Math.max(focusSpanSec||140*iv0,40*iv0),400*iv0);
+  await ensureHistory(f,span0*0.6*1000);
+  if(barsKey!==key||pendingFocus!==f)return;
+  if(bars[0].ms>f&&(histDone||!ivalReaches(curIval,f))){
+    const better=IVALS.find(v=>IVAL_SEC[v]>ivalSec()&&ivalReaches(v,f));
+    if(focusAutoIval&&better){focusNote='no '+curIval+' history that far back — switched to '+better;
+      curIval=better;renderIvals();loadCandles();hlResub();return;}
+    focusNote='no '+curIval+' history that far back — showing oldest available';}
+  pendingFocus=null;
+  const fSec=Math.min(Math.max(toChartSec(f),bars[0].time),bars[bars.length-1].time);
+  try{chart.timeScale().setVisibleRange({from:fSec-span0*0.55,to:fSec+span0*0.45});}catch(e){}
+  if(focusNote){cNote(focusNote);focusNote='';}}
+
+// ---- markets list + searchable switcher modal ----
+async function loadMarkets(force){
+  if(!force&&Date.now()-marketsAt<10000)return markets;
+  if(marketsReq)return marketsReq;
+  marketsReq=(async()=>{try{const r=await fetch('/api/markets');
+    if(r.ok){const d=await r.json();
+      if(d&&Array.isArray(d.markets)&&d.markets.length){markets=d.markets;marketsAt=Date.now();
+        const m=findMarket(curCoin);if(m)tbFromMarket(m);if(!$('mkov').hidden)renderMk();
+        buildHilite();scheduleFeed();}}}catch(e){}   // ticker readouts need the markets list to resolve
+    finally{marketsReq=null;}return markets;})();
+  return marketsReq;}
+function openMk(){$('mkov').hidden=false;const s=$('mksearch');s.value='';s.focus();renderMk();loadMarkets(true);}
+function closeMk(){$('mkov').hidden=true;}
+function renderMkChips(){const dexes=[...new Set(markets.map(m=>m.dex))];
+  $('mkchips').innerHTML=['all',...dexes].map(d=>`<button class="chip2${mkFilter===d?' on':''}" data-dexf="${esc(d)}">`
+    +(d==='all'?'ALL':(d===''?'CRYPTO':esc(d.toUpperCase())))+'</button>').join('');}
+function renderMk(){renderMkChips();
+  if(markets.length)$('mksearch').placeholder='Search '+markets.length+' markets …';
+  const q=($('mksearch').value||'').trim().toUpperCase();let list=markets;
+  if(mkFilter!=='all')list=list.filter(m=>m.dex===mkFilter);
+  if(q)list=list.filter(m=>m.symbol.includes(q)||m.name.toUpperCase().includes(q));
+  const total=list.length;list=list.slice(0,250);
+  $('mkrows').innerHTML=list.map(m=>{const chg=m.prev_day_px>0?(m.px-m.prev_day_px)/m.prev_day_px*100:null;
+    return `<tr class="mkrow${m.name===curCoin?' cur':''}" data-coin="${esc(m.name)}">
+      <td>${iconHtml(m,true)}<b>${esc(m.symbol)}</b><span class="mut">${m.dex?'-USD':'-USDC'}</span>
+        ${m.dex?`<span class="dexb">${esc(m.dex.toUpperCase())}</span>`:''}</td>
+      <td class="r">${fmtPx(m.px)}</td><td class="r">${fmtUsd(m.day_ntl_vlm)}</td>
+      <td class="r ${chg==null?'':(chg>=0?'up':'dn')}">${chg==null?'—':signpct(chg,2)}</td>
+      <td class="r">${fmtUsd(m.open_interest_usd)}</td>
+      <td class="r ${m.funding>=0?'up':'dn'}">${(m.funding*100).toFixed(4)}%</td></tr>`;}).join('')
+    ||`<tr><td colspan="6" class="empty">${markets.length?'No markets match.':'Loading…'}</td></tr>`;
+  $('mkcount').textContent=total+' / '+markets.length+' markets';}
+
+// Boot/refresh from a snapshot: connect HL stream, load markets, pick initial coin.
+function chartBoot(p){
+  if(p&&p.chart&&p.chart.hl_ws&&p.chart.hl_ws!==hlWsUrl){hlWsUrl=p.chart.hl_ws;hlWsConnect();}
+  initChart();
+  loadMarkets().then(()=>{
+    if(curCoin){buildMarkers();buildPosLines();hlResub();return;}
+    let saved=null;try{saved=JSON.parse(localStorage.getItem('arena_chart')||'null');}catch(e){}
+    let m=saved&&findMarket(saved.coin);
+    if(!m){const open=[...openPos.values()].concat(closedTrades).sort((a,b)=>(b.opened_ms||0)-(a.opened_ms||0))[0];
+      m=open&&findMarket(open.market);}
+    if(!m)m=findMarket('BTC')||markets[0]||{name:'BTC',symbol:'BTC',dex:''};
+    selectMarket(m.name,m.symbol,m.dex);});
+}
+function persistChart(){try{localStorage.setItem('arena_chart',JSON.stringify({coin:curCoin}));}catch(e){}}
+
+// ---- Hyperliquid public WS (live candle + asset ctx for the charted coin / open positions) ----
+function hlSend(o){try{if(hlWs&&hlWs.readyState===1)hlWs.send(JSON.stringify(o));}catch(e){}}
+function hlWsConnect(){
+  if(!hlWsUrl) return;
+  try{if(hlWs){hlWs.onclose=null;hlWs.close();}}catch(e){}
+  hlWs=new WebSocket(hlWsUrl);
+  hlWs.onopen=()=>{hlWsUp=true;hlPing();hlResub(true);if(curCoin)loadCandles();};
+  hlWs.onclose=()=>{hlWsUp=false;setTimeout(hlWsConnect,3000);};
+  hlWs.onerror=()=>{try{hlWs.close();}catch(e){}};
+  hlWs.onmessage=e=>{let m;try{m=JSON.parse(e.data);}catch(err){return;}hlWsMsg(m);};
+}
+function wantedSubs(){const subs=[],seen=new Set();
+  const addCtx=c=>{if(c&&!seen.has(c)){seen.add(c);subs.push({type:'activeAssetCtx',coin:c});}};
+  if(curCoin){subs.push({type:'candle',coin:curCoin,interval:curIval});addCtx(curCoin);}
+  openPos.forEach(p=>addCtx(p.market));
+  return subs;}
+function hlResub(fresh){
+  if(!hlWs||hlWs.readyState!==1) return;
+  const want=wantedSubs(),wk=new Set(want.map(s=>JSON.stringify(s)));
+  const had=new Set(fresh?[]:hlSubbed.map(s=>JSON.stringify(s)));
+  if(!fresh)hlSubbed.forEach(s=>{if(!wk.has(JSON.stringify(s)))hlSend({method:'unsubscribe',subscription:s});});
+  want.forEach(s=>{if(!had.has(JSON.stringify(s)))hlSend({method:'subscribe',subscription:s});});
+  hlSubbed=want;
+}
+function hlWsMsg(m){
+  if(m.channel==='candle'&&m.data){if(Array.isArray(m.data))m.data.forEach(applyCandle);else applyCandle(m.data);}
+  else if((m.channel==='activeAssetCtx'||m.channel==='activeSpotAssetCtx')&&m.data&&m.data.ctx){
+    const coin=m.data.coin,x=m.data.ctx,mark=+x.markPx||0,px=+x.midPx||mark;
+    if(px){livePx[coin]=px;fastPaint(coin);}   // re-mark positions on this coin at stream speed
+    if(coin!==curCoin)return;
+    if(+x.prevDayPx)tb.prevDay=+x.prevDayPx;if(+x.oraclePx)tb.oracle=+x.oraclePx;
+    if(+x.dayNtlVlm)tb.vol=+x.dayNtlVlm;if(x.funding!=null&&isFinite(+x.funding))tb.funding=+x.funding;
+    if(+x.openInterest&&mark)tb.oiUsd=(+x.openInterest)*mark;
+    if(lastPx==null&&px)lastPx=px;tb.has=true;tbRender();
+  }
+}
+function hlPing(){if(hlWs&&hlWs.readyState===1)hlSend({method:'ping'});}
+setInterval(hlPing,10000);
+setInterval(updatePosTimers,1000);   // live time-exit countdown (cheap textContent updates)
+setInterval(()=>{document.querySelectorAll('#feed .ntick').forEach(paintNTick);updateNewsLine();},3000);
+setInterval(()=>{const s=Math.max(0,Math.ceil((3600000-Date.now()%3600000)/1000));
+  if($('c-cd'))$('c-cd').textContent=String(Math.floor(s/3600)).padStart(2,'0')+':'
+    +String(Math.floor((s%3600)/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');},1000);
+
+// Server sends realized + static fields (30s / on snapshot); the displayed equity is always
+// recomputed from LIVE open-position uPnL so the bar stays in lockstep with the positions tab.
+function setLeaderboard(rows){if(rows&&rows.length)lbState=rows.slice();repaintLeaderboard();}
+let _lbShape='';   // model order + chip structure of the last full render
+function repaintLeaderboard(){
+  if(!lbState.length)return;
+  const up={};openPos.forEach(p=>{if(p.upnl!=null)up[p.model_id]=(up[p.model_id]||0)+p.upnl;});
+  const rows=lbState.map(r=>{const u=up[r.model]||0;
+    return {...r,unrealized:u,current:(r.starting||0)+(r.realized||0)+u};})
+    .sort((a,b)=>b.current-a.current);
+  // This runs on every coalesced price frame — when the ranking and chip structure are
+  // unchanged, patch the numbers in place instead of rebuilding innerHTML (which recreates
+  // the <img> logos, drops :hover, and causes layout churn that makes the chart feel laggy).
+  const shape=rows.map(r=>r.model+(r.unrealized?'u':'')+(r.live?'L':'')+(r.halted?'H':'')).join('|');
+  if(shape===_lbShape){
+    const kids=$('lbbar').children;
+    rows.forEach((r,i)=>{const c=kids[i];if(!c)return;
+      const ret=r.starting?(r.current/r.starting-1)*100:0,u=r.unrealized||0;
+      c.querySelector('.eq').textContent='$'+fmt(r.current,0);
+      const rt=c.querySelector('.ret');rt.textContent=pct(ret);rt.className='ret '+(ret>=0?'pos':'neg');
+      const uu=c.querySelector('.u');if(uu){uu.textContent=usd(u)+' open';uu.className='u '+(u>=0?'pos':'neg');}});
+    return;
+  }
+  _lbShape=shape;
+  $('lbbar').innerHTML=rows.map((r,i)=>{
+    const ret=r.starting?(r.current/r.starting-1)*100:0,u=r.unrealized||0;
+    return `<div class="lbc" data-model="${esc(r.model)}">
+      <span class="rk">${i+1}</span>${modelIcon(r.model,15)}
+      <b class="nm">${NAMES[r.key]||r.key}</b>
+      <span class="eq">$${fmt(r.current,0)}</span>
+      <span class="ret ${ret>=0?'pos':'neg'}">${pct(ret)}</span>
+      ${u?`<span class="u ${u>=0?'pos':'neg'}">${usd(u)} open</span>`:''}
+      ${r.live?'<span class="live">LIVE</span>':''}
+      ${r.halted?`<span class="halted" title="${(r.halt_reason||'').replace(/"/g,'')}">HALT</span>`:''}</div>`;
+  }).join('');
+}
+
+// One flat exchange-style row per position (labelled columns, like the pre-arena ticket).
+// The id'd elements (mark/upnl/roe/stop/te/fund) are what paintPositionsPnl()/fastPaint()
+// live-update — paint sets className 'ret …'/'v …' on upnl/roe/fund, so those ids sit on
+// inner spans and the .val wrapper keeps the column styling.
+function posRow(p){
+  const k=keyOf[p.model_id]||'?', up=upnlOf(p), id=esc(p.id), roe=roeOf(p);
+  const lev=p.leverage||1, tp=p.take_profit||0, f=fundingOf(p), trailing=isTrailing(p);
+  const stopSub=trailing?`trail ${((p.trail_pct||0)*100).toFixed(1)}%`:(tp>0?`TP ${fmtPx(tp)}`:'');
+  return `<div class="prow2">
+    <div class="pc mdl">
+      <div class="val">${modelIcon(p.model_id,14)} <b>${NAMES[k]||k}</b></div>
+      <div class="sub"><span class="sidechip ${p.side}">${(p.side||'').toUpperCase()} ${lev}×</span>
+        <span class="tlink" data-coin="${esc(p.market||'')}" data-focus="${p.opened_ms||''}" title="Show on chart">${esc(p.symbol)}</span>
+        <span>conf ${(100*(p.confidence||0)).toFixed(0)}%</span></div>
+    </div>
+    <div class="pc"><div class="lbl">Mark</div><div class="val" id="mark-${id}">${fmtPx(p.mark||p.entry_px)}</div>
+      <div class="sub">${fmtPx(p.entry_px)} open</div></div>
+    <div class="pc"><div class="lbl">Size</div><div class="val">$${fmt(p.notional||p.notional_usd,0)}</div>
+      <div class="sub">${p.size?fmt(p.size,4)+' '+esc(p.symbol||''):''}</div></div>
+    <div class="pc"><div class="lbl">PnL</div>
+      <div class="val"><span class="ret ${up>=0?'pos':'neg'}" id="upnl-${id}">${usd(up)}</span></div>
+      <div class="sub"><span class="v ${roe>=0?'pos':'neg'}" id="roe-${id}">${signpct(roe,1)}</span> on margin</div></div>
+    <div class="pc"><div class="lbl">${trailing?'Trail stop':'Stop loss'}</div><div class="val" id="stop-${id}">${stopHtml(p)}</div>
+      <div class="sub">${stopSub}</div></div>
+    <div class="pc"><div class="lbl">Auto-close in</div><div class="val" id="te-${id}">${fmtDur((p.time_exit_ms||0)-Date.now())}</div>
+      <div class="sub">funding <span class="v ${f>0?'neg':f<0?'pos':'mut'}" id="fund-${id}">${fundHtml(p)}</span></div></div>
+  </div>`;
+}
+
+function renderPositions(){
+  // One card per TRIGGERING NEWS ITEM: when several models traded the same headline their
+  // positions stack as rows under a single news description. Card click -> detail modal.
+  const arr=[...openPos.values()].sort((a,b)=>(b.opened_ms||0)-(a.opened_ms||0));
+  $('posmeta').textContent=arr.length;
+  if(!arr.length){$('pos').innerHTML='<div class="empty">no open positions</div>';return;}
+  const groups=new Map();   // news_id (or own id when untagged) -> positions[]
+  for(const p of arr){const g=p.news_id||('pos:'+p.id);
+    if(!groups.has(g))groups.set(g,[]);groups.get(g).push(p);}
+  $('pos').innerHTML=[...groups.values()].map(ps=>{
+    const p0=ps[0], n=news.get(p0.news_id);
+    const headline=hlite(((n?headlineOf(n):'')||p0.news_title||''),170);
+    const sides=new Set(ps.map(p=>p.side));
+    const cls=sides.size===1?' '+[...sides][0]:'';
+    const opened=Math.max(...ps.map(p=>p.opened_ms||0));
+    const rows=ps.slice().sort((a,b)=>(a.opened_ms||0)-(b.opened_ms||0)).map(posRow).join('');
+    return `<div class="pcard pgroup${cls} nclick" data-id="${esc(p0.news_id||'')}">
+      <div class="ghd">
+        <span class="gnews">${headline||'<span class="mut">manual / unknown catalyst</span>'}</span>
+        <span class="gmeta">${ps.length>1?ps.length+' models · ':''}${ago(opened/1000)} ago</span>
+      </div>
+      ${rows}
+    </div>`;
+  }).join('');
+  hydrateMissingHeadlines([...groups.keys()]);
+}
+
+// Closed-trade ticket row (same labelled-column grid as posRow, closed-trade columns).
+function histRow(p){
+  const k=keyOf[p.model_id]||'?', pnl=p.pnl_usd||0, cls=pnl>=0?'pos':'neg';
+  const pct=p.notional_usd?signpct(pnl/p.notional_usd*100,1):'';
+  const f=p.funding_usd||0;
+  return `<div class="prow2">
+    <div class="pc mdl">
+      <div class="val">${modelIcon(p.model_id,14)} <b>${NAMES[k]||k}</b></div>
+      <div class="sub"><span class="sidechip ${p.side}">${(p.side||'').toUpperCase()} ${p.leverage||1}×</span>
+        <span class="tlink" data-coin="${esc(p.market||'')}" data-focus="${p.opened_ms||''}" title="Show on chart">${esc(p.symbol)}</span>
+        ${p.dry_run?'':'<span class="livetag">LIVE</span>'}</div>
+    </div>
+    <div class="pc"><div class="lbl">Exit</div><div class="val">${fmtPx(p.exit_px)}</div>
+      <div class="sub">${fmtPx(p.entry_px)} open</div></div>
+    <div class="pc"><div class="lbl">Size</div><div class="val">$${fmt(p.notional_usd,0)}</div>
+      <div class="sub">${p.size?fmt(p.size,4)+' '+esc(p.symbol||''):''}</div></div>
+    <div class="pc"><div class="lbl">PnL</div><div class="val"><span class="${cls}">${usd(pnl)}</span></div>
+      <div class="sub"><span class="${cls}">${pct}</span></div></div>
+    <div class="pc"><div class="lbl">Closed</div><div class="val rsn">${esc(p.exit_reason||'—')}</div>
+      <div class="sub">held ${fmtDur((p.closed_ms||0)-(p.opened_ms||0))}</div></div>
+    <div class="pc"><div class="lbl">Funding</div><div class="val"><span class="${f>0?'neg':f<0?'pos':'mut'}">${usd(-f)}</span></div>
+      <div class="sub">${ago((p.closed_ms||0)/1000)} ago</div></div>
+  </div>`;
+}
+
+function renderHistory(){
+  // Same grouped presentation as open positions: one card per triggering news item; models
+  // that traded the same headline stack as rows, with the group's NET realized PnL up top
+  // (border tint = net win/loss). Row ticker click focuses the chart; card click opens the
+  // per-model detail modal.
+  const arr=[...closedTrades].sort((a,b)=>(b.closed_ms||0)-(a.closed_ms||0));
+  $('histmeta').textContent=arr.length;
+  if(!arr.length){$('hist').innerHTML='<div class="empty">no closed trades yet</div>';return;}
+  const groups=new Map();   // news_id (or own id when untagged) -> closed trades[]
+  for(const p of arr){const g=p.news_id||('pos:'+p.id);
+    if(!groups.has(g))groups.set(g,[]);groups.get(g).push(p);}
+  $('hist').innerHTML=[...groups.values()].map(ps=>{
+    const p0=ps[0], n=news.get(p0.news_id);
+    const headline=hlite(((n?headlineOf(n):'')||p0.news_title||''),170);
+    const tot=ps.reduce((s,p)=>s+(p.pnl_usd||0),0);
+    const totN=ps.reduce((s,p)=>s+(p.notional_usd||0),0);
+    const cls=tot>=0?'pos':'neg';
+    const closed=Math.max(...ps.map(p=>p.closed_ms||0));
+    const rows=ps.slice().sort((a,b)=>(a.closed_ms||0)-(b.closed_ms||0)).map(histRow).join('');
+    return `<div class="pcard pgroup ${tot>=0?'win':'loss'} nclick" data-id="${esc(p0.news_id||'')}">
+      <div class="ghd">
+        <span class="gnews">${headline||'<span class="mut">manual / unknown catalyst</span>'}</span>
+        <span class="gmeta">${ps.length>1?ps.length+' models · ':''}closed ${ago(closed/1000)} ago</span>
+        <span class="gpnl ${cls}">${usd(tot)}${totN?` <span class="gpct">${signpct(tot/totN*100,1)}</span>`:''}</span>
+      </div>
+      ${rows}
+    </div>`;
+  }).join('');
+  hydrateMissingHeadlines([...groups.keys()]);
+}
+
+// Old groups' news may be absent from the in-memory maps (they scroll out of the snapshot
+// window): fetch each once via the detail endpoint so cards show the real headline instead
+// of the stub title. `hydrated` guards each id to a single DB consult per session.
+let _hhBusy=false;
+async function hydrateMissingHeadlines(ids){
+  const want=ids.filter(id=>id&&!String(id).startsWith('pos:')&&!news.has(id)&&!hydrated.has(id))
+    .slice(0,40);
+  if(!want.length||_hhBusy)return;
+  _hhBusy=true;
+  try{for(const id of want)await hydrateDetail(id);}finally{_hhBusy=false;}
+  resortFeedMaps();renderHistory();renderPositions();
+}
+
+function renderFeed(){
+  // News-only (exits live in the Trade history tab): every ANALYZED headline, newest first,
+  // with each model's call (icon + ticker + direction + confidence); models that actually
+  // entered get a ✓ and are highlighted.
+  let items=[];
+  for(const [id,vs] of verdicts){
+    const n=news.get(id)||{title:id,source:'',ts:0};
+    items.push({ts:(n.ts||0)/1000,id,n,vs});
+  }
+  items.sort((a,b)=>b.ts-a.ts);
+  // Hide hydrated strays older than the pagination frontier — they'd render as a gap-jump
+  // at the bottom; "load older" reveals them once the contiguous window reaches them.
+  if(isFinite(feedBefore))items=items.filter(it=>!it.ts||it.ts*1000>=feedBefore);
+  if(!items.length){$('feed').innerHTML='<div class="empty">waiting for news…</div>';return;}
+  const foot=`<div class="ldmore">${feedExhausted&&items.length<=feedLimit
+    ?'<span class="mut">no older news</span>'
+    :`<button id="ldbtn"${feedLoading?' disabled':''}>${feedLoading?'loading…':'Load more'}</button>`}</div>`;
+  $('feed').innerHTML=items.slice(0,feedLimit).map(it=>{
+    const {n,vs,id}=it, td=traded.get(id)||{};
+    const anyTrade=Object.keys(td).length>0;
+    const chips=entrants.map(e=>{
+      const v=vs[e.model], nm=NAMES[e.key]||e.key;
+      if(!v) return `<span class="chip" title="${nm}">${modelIcon(e.model,11)}<span class="mut">…</span></span>`;
+      const did=!!td[e.model];
+      const fire=did||(v.dir!=='none'&&v.conf>=e.gate)?' fire':'';
+      const tk=v.ticker?` <span class="tlink" data-sym="${esc(v.ticker)}" data-symclass="${esc(v.aclass||'')}" title="Show ${esc(v.ticker)} on chart">${esc(v.ticker)}</span>`:'';
+      const body=v.dir==='none'?'<span class="mut">pass</span>'
+        :`${v.dir}${tk} ${(v.conf*100).toFixed(0)}%${did?' ✓':''}`;
+      return `<span class="chip ${v.dir}${fire}" title="${nm}">${modelIcon(e.model,11)}${body}</span>`;
+    }).join('');
+    const quiet=!anyTrade&&entrants.length&&entrants.every(e=>{const v=vs[e.model];return v&&v.dir==='none';});
+    return `<div class="fitem nclick${anyTrade?' traded':quiet?' quiet':''}" data-id="${id}"><span class="t">${ago((n.ts||0)/1000)} ago</span>
+      <div class="hl">${hlite(headlineOf(n),180)}</div>
+      <div class="mut" style="font-size:10.5px;margin-top:1px">${esc(n.source||'')}${anyTrade?' · <span class="pos" style="font-weight:700">traded</span>':''}</div>
+      ${ticksHtml(id)}
+      <div class="chip-row">${chips}</div></div>`;
+  }).join('')+foot;
+  fillNewsTicks($('feed'));
+}
+// A news burst lands 5 analyses + decisions back-to-back; rebuild the feed once per frame,
+// not once per websocket message (same idiom as schedulePaint).
+let _feedReq=false;
+function scheduleFeed(){if(_feedReq)return;_feedReq=true;
+  requestAnimationFrame(()=>{_feedReq=false;renderFeed();});}
+
+// ---- "load older news" pagination (DB-backed, 50 analyzed items per page) ----
+// feedBefore is an EXPLICIT cursor (oldest contiguously-loaded time_ms), never derived from
+// the news map: modal/headline hydration drops far-older strays into the same map, and a
+// derived minimum would make the next page silently skip everything in between.
+let feedLimit=100, feedLoading=false, feedExhausted=false, feedBefore=Infinity;
+async function loadOlderNews(){
+  if(feedLoading||feedExhausted)return;
+  feedLoading=true;renderFeed();
+  try{
+    const r=await fetch('/api/arena/news?before='
+      +(isFinite(feedBefore)?Math.floor(feedBefore):Date.now())+'&limit=50');
+    if(r.ok){
+      const d=await r.json();
+      (d.news||[]).forEach(addNews);
+      (d.analyses||[]).forEach(addVerdict);
+      (d.decisions||[]).forEach(addDecision);
+      (d.news||[]).forEach(x=>{hydrated.add(x.id);   // page IS the DB record — modal needn't refetch
+        if(x.time_ms)feedBefore=Math.min(feedBefore,x.time_ms);});
+      if((d.news||[]).length<50)feedExhausted=true;
+      resortFeedMaps();
+    }
+  }catch(e){/* offline — button stays, retry on next click */}
+  feedLimit+=50;feedLoading=false;renderFeed();
+}
+function resortFeedMaps(){
+  // Keep insertion order == ts-ascending so capMap() evictions always drop the OLDEST item:
+  // "load older" pages append old ids at the END, which would otherwise invert the order
+  // capMap relies on (its evictor deletes the first-inserted key).
+  const tsOf=id=>((news.get(id)||{}).ts)||0;
+  for(const m of [news,verdicts,decisions,traded]){
+    const ids=[...m.keys()].sort((a,b)=>tsOf(a)-tsOf(b));
+    const copy=new Map(m);m.clear();
+    for(const id of ids)m.set(id,copy.get(id));
+  }
+}
+
+function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function headlineOf(n){return (n.body||n.title||'');}   // tradfi puts the real text in body
+
+// ---- headline ticker/company highlighting ----
+// Bank = every tradable symbol (/api/markets) + the server's name->ticker ALIASES + a few
+// newsworthy names with no listed ticker. Tickers match CASE-SENSITIVE (uppercase) minus a
+// stoplist of symbols that are ordinary words in all-caps wire headlines; company names
+// match case-insensitively. $CASHTAGS always highlight.
+const HL_EXTRA_NAMES=['anthropic','openai'];
+const HL_NAME_SKIP=new Set(['strategy','circle']);   // alias keys too common as plain words
+const HL_TICK_SKIP=new Set(['AI','IP','IO','ME','OP','OM','GAS','NOT','ONE','ALL','PEOPLE',
+  'HYPE','MEME','NEAR','PUMP','SUPER','TURBO','USUAL','VINE','GOAT','GRASS','BLUR','CAKE',
+  'ZEN','TON','ACE','ACT','TRUMP','COIN','BIO','PRIME','MOVE','SAND','NOW','ON','IT','SO',
+  'BID','SAGA','BANANA','ANIME','GMT','TIME','TRUST','LAYER']);
+let hlRe=null,hlTicks=new Set(),hlNames=new Set(),hlAliases={};
+function buildHilite(){
+  hlTicks=new Set();hlNames=new Set();
+  markets.forEach(m=>{if(m.symbol)hlTicks.add(m.symbol.toUpperCase());});
+  const names=[...HL_EXTRA_NAMES];
+  for(const [name,tick] of Object.entries(hlAliases)){
+    hlTicks.add(String(tick).toUpperCase());
+    if(!HL_NAME_SKIP.has(name))names.push(name);
+  }
+  for(const t of [...hlTicks]) if(t.length<2||HL_TICK_SKIP.has(t)) hlTicks.delete(t);
+  names.forEach(x=>hlNames.add(x.toUpperCase()));
+  const toks=[...hlTicks,...hlNames]
+    .sort((a,b)=>b.length-a.length)
+    .map(t=>t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+  hlRe=toks.length?new RegExp('(?<![A-Za-z0-9$&;])(\\$[A-Za-z]{2,10}|'+toks.join('|')
+    +')(?![A-Za-z0-9])','gi'):null;
+}
+function hlite(s,max){   // esc() + wrap known tickers/names — use IN PLACE of esc() on news text
+  const t=esc((s||'').slice(0,max||400));
+  if(!hlRe)return t;
+  return t.replace(hlRe,m=>(m[0]==='$'||hlTicks.has(m)||hlNames.has(m.toUpperCase()))
+    ?`<span class="ntk">${m}</span>`:m);
+}
+
+// A 24/7 tab must not grow without bound: cap the backing join-maps (insertion order is
+// kept ts-ascending — see resortFeedMaps — so eviction drops the oldest news) and the
+// trade lists. 1000 ids ≈ the seed + ~18 "load older" pages before the oldest fall out.
+const MAX_FEED_IDS=1000, MAX_CLOSED=400;
+function capMap(m){while(m.size>MAX_FEED_IDS){m.delete(m.keys().next().value);}}
+function addNews(n){if(!news.has(n.id))news.set(n.id,{title:n.title,body:n.body,source:n.source,ts:n.time_ms});capMap(news);}
+function addVerdict(a){if(!verdicts.has(a.news_id))verdicts.set(a.news_id,{});
+  verdicts.get(a.news_id)[a.model]={dir:a.direction,conf:a.confidence,ticker:a.ticker,
+    rationale:a.rationale,stale:a.is_stale,sens:a.time_sensitivity,aclass:a.asset_class,
+    lat:a.latency_ms,cost:a.cost_usd};capMap(verdicts);capMap(traded);}
+function addDecision(d){if(!d)return; if(!decisions.has(d.news_id))decisions.set(d.news_id,{});capMap(decisions);
+  const sym=(d.market&&d.market.symbol)||d.symbol||null;
+  // key by model when tagged, else symbol:side — so legacy/untagged decisions still resolve
+  const k=d.model||((sym||'?')+':'+(d.side||''));
+  decisions.get(d.news_id)[k]={model:d.model||'',action:d.action,reason:d.reason,
+    symbol:sym,side:d.side,notional:d.notional_usd};}
+function findDecision(dmap,model,v){
+  // exact model tag (new), else match the legacy/untagged decision by ticker (side optional —
+  // blacklist/no-signal rejects don't carry a side)
+  return dmap[model] || (v.ticker && Object.values(dmap).find(
+    x=>x.symbol&&x.symbol===v.ticker&&(!x.side||x.side===v.dir))) || null;
+}
+
+function onSnapshot(p){
+  entrants=p.entrants||[];
+  entrants.forEach(e=>{keyOf[e.model]=e.key;colorOfModel[e.model]=COLORS[e.key]||'#9aa';
+    logoImg(e.model);});   // warm the logo cache for the chart markers
+  $('mode').textContent=p.runtime&&!p.runtime.dry_run?'LIVE':'PAPER';
+  $('mode').className='badge'+(p.runtime&&!p.runtime.dry_run?' live':'');
+  if(p.started_ms)arenaStart=p.started_ms;
+  if(p.aliases)hlAliases=p.aliases;
+  buildHilite();
+  (p.news||[]).forEach(addNews);
+  (p.news||[]).forEach(n=>{if(n.time_ms)feedBefore=Math.min(feedBefore,n.time_ms);});
+  (p.analyses||[]).forEach(addVerdict);
+  (p.decisions||[]).forEach(addDecision);
+  closedTrades=[];
+  (p.positions||[]).forEach(x=>{
+    if(x.status==='open') openPos.set(x.id,x);
+    if(x.news_id){ if(!traded.has(x.news_id))traded.set(x.news_id,{});
+      traded.get(x.news_id)[x.model_id]={side:x.side,notional:x.notional_usd}; }
+  });
+  // Trade history: the dedicated deep seed (200 newest closed, all lanes); fall back to the
+  // closed rows inside the general 50-row snapshot for older servers.
+  const closedSrc=(p.closed_positions&&p.closed_positions.length)?p.closed_positions
+                  :(p.positions||[]).filter(x=>x.status==='closed');
+  closedSrc.forEach(x=>{
+    if(x.news_id){ if(!traded.has(x.news_id))traded.set(x.news_id,{});
+      traded.get(x.news_id)[x.model_id]={side:x.side,notional:x.notional_usd}; }
+    if(x.opened_ms&&x.closed_ms)closedTrades.push(x);   // entry+exit markers + history rows
+  });
+  closedTrades=closedTrades.slice(-MAX_CLOSED);
+  chartBoot(p);
+  if(p.leaderboard) setLeaderboard(p.leaderboard);
+  renderPositions(); renderHistory(); renderFeed();
+}
+
+function onCapital(p){
+  setLeaderboard(p.lanes);
+  $('upd').textContent='updated '+ago(p.ts||Date.now()/1000)+' ago';
+}
+
+function connect(){
+  const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');
+  ws.onopen=()=>$('conn').classList.add('on');
+  ws.onclose=()=>{$('conn').classList.remove('on');setTimeout(connect,2000);};
+  ws.onmessage=ev=>{
+    const {topic,payload}=JSON.parse(ev.data);
+    if(topic==='snapshot') onSnapshot(payload);
+    else if(topic==='arena.capital') onCapital(payload);
+    else if(topic==='news.raw'){addNews(payload);}
+    else if(topic==='analysis'){addVerdict(payload);scheduleFeed();refreshModal();}
+    else if(topic==='decision'){addDecision(payload);scheduleFeed();refreshModal();}
+    else if(topic==='trade.open'){openPos.set(payload.id,payload);
+      if(!traded.has(payload.news_id))traded.set(payload.news_id,{});
+      traded.get(payload.news_id)[payload.model_id]={side:payload.side,notional:payload.notional_usd};
+      onTradeMark();renderPositions();scheduleFeed();}
+    else if(topic==='trade.close'){openPos.delete(payload.id);
+      if(payload.opened_ms&&payload.closed_ms){closedTrades.push(payload);
+        if(closedTrades.length>MAX_CLOSED)closedTrades=closedTrades.slice(-MAX_CLOSED);}
+      onTradeMark();renderPositions();renderHistory();scheduleFeed();}
+    else if(topic==='positions.tick'){(payload.ticks||[]).forEach(t=>{const p=openPos.get(t.id);
+      if(p){p.upnl=t.upnl;p.mark=t.mark;if(t.eff_stop!=null)p.eff_stop=t.eff_stop;
+        if(t.funding!=null)p.funding_usd=t.funding;if(t.peak_px!=null)p.peak_px=t.peak_px;}});schedulePaint();}
+  };
+}
+// ---- detail modal: per-model reasoning + decision (haircuts, dup, blacklist, gate) ----
+let modalId=null;
+function openDetail(id){modalId=id;$('modal').hidden=false;refreshModal();hydrateDetail(id);}
+function closeModal(){modalId=null;$('modal').hidden=true;}
+const hydrated=new Set();   // ids fetched from the DB (distinguishes "analyzing…" from "no record")
+async function hydrateDetail(id){
+  // Old trades' news/analyses scroll out of the snapshot window (and the capped in-memory
+  // maps) — fetch the real record from the DB so the modal never shows placeholder data.
+  if(hydrated.has(id)||(news.has(id)&&verdicts.has(id)))return;
+  try{
+    const r=await fetch('/api/arena/detail?id='+encodeURIComponent(id));
+    if(!r.ok)return;
+    const d=await r.json();
+    if(d.news)addNews(d.news);
+    (d.analyses||[]).forEach(addVerdict);
+    (d.decisions||[]).forEach(addDecision);
+  }catch(e){/* offline — leave whatever we have */}
+  hydrated.add(id);
+  refreshModal();
+}
+function refreshModal(){
+  if(modalId===null||$('modal').hidden) return;
+  const id=modalId, n=news.get(id)||{}, vs=verdicts.get(id)||{}, ds=decisions.get(id)||{}, td=traded.get(id)||{};
+  $('mtitle').innerHTML=`<div><div class="hl" style="font-size:14px">${hlite(headlineOf(n),400)||'<span class=mut>loading…</span>'}</div>
+    <div class="mut" style="font-size:11px;margin-top:3px">${esc(n.source||'')}${n.ts?` · ${ago(n.ts/1000)} ago`:''}</div></div>`;
+  // "analyzing…" only makes sense for FRESH items; once the DB has been consulted and the
+  // item is past any plausible analysis latency, an absent verdict is a missing record.
+  const stale=hydrated.has(id)&&n.ts&&(Date.now()-n.ts)>120_000;
+  $('mbody').innerHTML=entrants.map(e=>{
+    const nm=NAMES[e.key]||e.key, v=vs[e.model];
+    if(!v) return `<div class="mrow"><div class="mhdr">${modelIcon(e.model)}
+      <b>${nm}</b><span class="mut" style="margin-left:auto">${stale?'no analysis recorded':'analyzing…'}</span></div></div>`;
+    const d=findDecision(ds,e.model,v), did=!!td[e.model];
+    const call=v.dir==='none'?'<span class="mut">no trade</span>'
+      :`<span class="${v.dir==='long'?'pos':'neg'}">${v.dir.toUpperCase()}</span> `
+        +`${v.ticker?`<span class="tlink" data-sym="${esc(v.ticker)}" data-symclass="${esc(v.aclass||'')}">${esc(v.ticker)}</span>`:''}`
+        +` <span class="mut">conf ${(v.conf*100).toFixed(0)}%</span>`;
+    const meta=`<span class="mut" style="font-size:10.5px">${v.lat!=null?fmt(v.lat)+'ms':''}${v.cost!=null?' · $'+Number(v.cost).toFixed(4):''}</span>`;
+    let outcome;
+    if(did) outcome=`<span class="pos">✓ ENTERED ${td[e.model].side} $${fmt(td[e.model].notional,0)}</span>`;
+    else if(d&&d.action==='enter')   // old item: traded map evicted, but the decision row knows
+      outcome=`<span class="pos">✓ ENTERED ${d.side||''}${d.notional?` $${fmt(d.notional,0)}`:''}</span>`;
+    else if(d&&d.action==='reject') outcome=`<span class="neg">✕ rejected</span> — <span class="mut">${esc(d.reason||'')}</span>`;
+    else if(v.dir==='none') outcome=`<span class="mut">passed</span>`;
+    else outcome=`<span class="mut">pending risk check…</span>`;
+    return `<div class="mrow">
+      <div class="mhdr">${modelIcon(e.model)}<b>${nm}</b>
+        <span class="gt">trades at ≥${Math.round(e.gate*100)}%</span><span style="margin-left:auto">${call}</span></div>
+      <div class="mrat">"${esc(v.rationale||'(no rationale returned)')}"</div>
+      <div class="mout">${outcome}${v.stale?' <span class="amber">· flagged stale / priced-in</span>':''}
+        ${v.sens&&v.sens!=='none'?` <span class="mut">· ${v.sens}</span>`:''} &nbsp; ${meta}</div></div>`;
+  }).join('');
+}
+// feed click: a ticker box / ticker chip snaps the chart (handled by the document handler
+// below); anything else opens the per-model detail modal.
+$('feed').addEventListener('click',ev=>{
+  if(ev.target.id==='ldbtn'){loadOlderNews();return;}
+  if(ev.target.closest('.ntick')||ev.target.closest('[data-sym],[data-coin]'))return;
+  const r=ev.target.closest('.nclick');if(r)openDetail(r.dataset.id);});
+// Open-positions / trade-history tabs share the bottom-left panel.
+function showPosTab(hist){
+  $('pos').hidden=hist; $('hist').hidden=!hist;
+  $('tab-pos').classList.toggle('on',!hist); $('tab-hist').classList.toggle('on',hist);
+}
+$('tab-pos').addEventListener('click',()=>showPosTab(false));
+$('tab-hist').addEventListener('click',()=>showPosTab(true));
+$('hist').addEventListener('click',ev=>{  // card -> news/analysis detail; ticker -> chart (doc handler)
+  if(ev.target.closest('.tlink'))return;
+  const r=ev.target.closest('.nclick');if(r&&r.dataset.id)openDetail(r.dataset.id);});
+$('pos').addEventListener('click',ev=>{   // card -> news/analysis detail; ticker -> chart (doc handler)
+  if(ev.target.closest('[data-sym],[data-coin]'))return;
+  const r=ev.target.closest('.nclick');if(r&&r.dataset.id)openDetail(r.dataset.id);});
+$('ivals').addEventListener('click',ev=>{const b=ev.target.closest('[data-iv]');
+  if(b){curIval=b.dataset.iv;curRange=null;renderRanges();renderIvals();loadCandles();hlResub();}});
+$('ranges').addEventListener('click',ev=>{const b=ev.target.closest('[data-r]');if(!b)return;
+  const R=RANGES.find(x=>x[0]===b.dataset.r);if(!R)return;
+  curRange=R[0];renderRanges();pendingFocus=null;
+  if(curIval!==R[2]){curIval=R[2];renderIvals();pendingRangeSec=R[1];loadCandles();hlResub();}
+  else{pendingRangeSec=null;applyRange(R[1]);}});
+$('y-pct').addEventListener('click',()=>setYMode('pct'));
+$('y-log').addEventListener('click',()=>setYMode('log'));
+$('y-auto').addEventListener('click',()=>{if(!chartReady)return;
+  try{const ps=cSeries.priceScale();ps.applyOptions({autoScale:!ps.options().autoScale});}catch(e){}
+  syncYAuto();});
+setInterval(tickFoot,1000);
+$('tzsel').addEventListener('change',()=>{
+  chartTz=$('tzsel').value;try{localStorage.setItem('arena_tz',chartTz);}catch(e){}
+  renderTzSel();tickFoot();   // refresh the offset labels + the clock right away
+  if(!chartReady||!bars.length)return;
+  // Re-shift in place from each bar's raw ms — no refetch, and the logical range
+  // (bar indices) is unchanged, so the view doesn't move.
+  const lr=chart.timeScale().getVisibleLogicalRange();
+  bars=bars.map(b=>({...b,time:toChartSec(b.ms)}));
+  setSeriesData();
+  if(lr)try{chart.timeScale().setVisibleLogicalRange(lr);}catch(e){}
+  buildMarkers();
+});
+// clicking ANY ticker (feed box/chip, position card, modal row) retargets the chart
+document.addEventListener('click',ev=>{
+  const nt=ev.target.closest('.ntick');
+  if(nt){chartToNews(nt.dataset.newscoin,+nt.dataset.newst||0,nt.dataset.newsid||'');return;}
+  const tk=ev.target.closest('[data-sym],[data-coin]');
+  if(!tk)return;
+  if(tk.tagName==='A')ev.preventDefault();
+  if(tk.dataset.coin)chartTo(tk.dataset.coin,+tk.dataset.focus||0);
+  else chartToSym(tk.dataset.sym,tk.dataset.symclass||'');});
+$('pairbtn').addEventListener('click',openMk);
+let _mkT=0;   // debounce: each render rebuilds up to 250 icon rows
+$('mksearch').addEventListener('input',()=>{clearTimeout(_mkT);_mkT=setTimeout(renderMk,120);});
+$('mksearch').addEventListener('keydown',e=>{if(e.key==='Enter'){
+  const r=$('mkrows').querySelector('[data-coin]');if(r)chartTo(r.dataset.coin);}});
+$('mkchips').addEventListener('click',e=>{const c=e.target.closest('[data-dexf]');
+  if(c){mkFilter=c.dataset.dexf;renderMk();}});
+$('mkov').addEventListener('click',e=>{if(e.target===$('mkov'))closeMk();});
+$('mclose').addEventListener('click',closeModal);
+$('modal').addEventListener('click',ev=>{if(ev.target.id==='modal')closeModal();});
+document.addEventListener('keydown',ev=>{if(ev.key==='Escape'){
+  if(!$('npop').hidden)hideNpop();
+  else if(!$('mkov').hidden)closeMk();
+  else if(!$('usemodal').hidden)$('usemodal').hidden=true;
+  else if(!$('docsmodal').hidden)$('docsmodal').hidden=true;
+  else if(!$('modal').hidden)closeModal();   // detail may sit on top of the model modal
+  else closeMd();}});
+
+// ---- per-model trade-history modal (leaderboard chip click) ----
+let mdModel=null;
+const mdCache={};   // model -> {ts, closed[]} (30s TTL: reopen is instant, data stays fresh)
+function closeMd(){mdModel=null;$('mdmodal').hidden=true;}
+async function openModelModal(model){
+  mdModel=model;$('mdmodal').hidden=false;
+  const c=mdCache[model];
+  if(c&&Date.now()-c.ts<30000){renderModelModal(c.closed);return;}
+  renderModelModal(null);   // header + "loading…" while the full history fetches
+  let closed=null;
+  try{const r=await fetch('/api/arena/model_trades?model='+encodeURIComponent(model));
+    if(r.ok){closed=(await r.json()).closed||[];mdCache[model]={ts:Date.now(),closed};}
+  }catch(e){/* offline — the error row below renders */}
+  if(mdModel!==model||$('mdmodal').hidden)return;   // switched / closed while fetching
+  if(!closed){$('mdbody').innerHTML='<div class="empty">failed to load trade history</div>';return;}
+  renderModelModal(closed);
+}
+function mdHeadline(p){   // live map first (richest), else the title stored on the position
+  const n=news.get(p.news_id);
+  return ((n?headlineOf(n):'')||p.news_title||'').trim();
+}
+function mdTradeRow(p,open){
+  const pnl=open?upnlOf(p):(p.pnl_usd||0), cls=pnl>=0?'pos':'neg';
+  const notional=p.notional_usd||p.notional||0;
+  const rpct=notional?signpct(pnl/notional*100,1):'';
+  const held=open?(Date.now()-(p.opened_ms||0)):((p.closed_ms||0)-(p.opened_ms||0));
+  const h=mdHeadline(p);
+  return `<tr class="nclick" data-id="${esc(p.news_id||'')}">
+    <td>${open?'<span class="opentag">OPEN</span>':ago((p.closed_ms||0)/1000)+' ago'}</td>
+    <td><span class="tlink" data-coin="${esc(p.market||'')}" data-focus="${p.opened_ms||''}" title="Show on chart"><b>${esc(p.symbol)}</b></span>
+      <span class="sidechip ${p.side}">${(p.side||'').toUpperCase()} ${p.leverage||1}×</span>
+      ${h?`<div class="hlsub" title="${esc(h)}">${esc(h.slice(0,120))}</div>`:''}</td>
+    <td>$${fmt(notional,0)}</td>
+    <td>${fmtPx(p.entry_px)}</td>
+    <td>${open?'<span class="mut">—</span>':fmtPx(p.exit_px)}</td>
+    <td><span class="${cls}">${usd(pnl)}</span> <span class="${cls}" style="font-size:10px">${rpct}</span></td>
+    <td>${fmtDur(held)}</td>
+    <td class="mut">${open?'—':esc(p.exit_reason||'—')}</td></tr>`;
+}
+function renderModelModal(closed){
+  const model=mdModel;if(model===null)return;
+  const k=keyOf[model], lb=lbState.find(r=>r.model===model)||{};
+  const open=[...openPos.values()].filter(p=>p.model_id===model)
+    .sort((a,b)=>(b.opened_ms||0)-(a.opened_ms||0));
+  const u=open.reduce((s,p)=>s+(upnlOf(p)||0),0);
+  const cur=(lb.starting||0)+(lb.realized||0)+u;
+  const ret=lb.starting?(cur/lb.starting-1)*100:0;
+  $('mdtitle').innerHTML=`<div style="display:flex;align-items:center;gap:10px">
+    ${modelIcon(model,20)}<b style="font-size:16px">${NAMES[k]||k||esc(model)}</b>
+    ${lb.live?'<span class="livetag">LIVE</span>':''}
+    <span style="margin-left:auto;text-align:right;white-space:nowrap">
+      <span style="font-size:17px;font-weight:700;font-variant-numeric:tabular-nums">$${fmt(cur,0)}</span>
+      <span class="${ret>=0?'pos':'neg'}" style="font-size:12.5px;font-weight:650;margin-left:7px;font-variant-numeric:tabular-nums">${pct(ret)}</span>
+    </span></div>`;
+  if(closed===null){$('mdbody').innerHTML='<div class="empty">loading…</div>';return;}
+  // Full-history stats — deeper than the top bar: PF, tails, hold time.
+  const wins=closed.filter(p=>(p.pnl_usd||0)>0), losses=closed.filter(p=>(p.pnl_usd||0)<=0);
+  const gw=wins.reduce((s,p)=>s+(p.pnl_usd||0),0), gl=losses.reduce((s,p)=>s+(p.pnl_usd||0),0);
+  const best=closed.reduce((a,p)=>(p.pnl_usd||0)>((a&&a.pnl_usd)||-1e18)?p:a,null);
+  const worst=closed.reduce((a,p)=>(p.pnl_usd||0)<((a&&a.pnl_usd)||1e18)?p:a,null);
+  const holds=closed.map(p=>(p.closed_ms||0)-(p.opened_ms||0)).filter(x=>x>0).sort((a,b)=>a-b);
+  const medHold=holds.length?holds[Math.floor(holds.length/2)]:null;
+  const fund=closed.reduce((s,p)=>s+(p.funding_usd||0),0);
+  const st=(kk,vv,ss)=>`<div class="mstat"><div class="k">${kk}</div><div class="v">${vv}</div>${ss?`<div class="s">${ss}</div>`:''}</div>`;
+  const stats=
+     st('Realized',`<span class="${(lb.realized||0)>=0?'pos':'neg'}">${usd(lb.realized||0)}</span>`,
+        `${closed.length} closed trade${closed.length===1?'':'s'}`)
+    +st('Open',open.length?`<span class="${u>=0?'pos':'neg'}">${usd(u)}</span>`:'—',
+        open.length?`${open.length} position${open.length===1?'':'s'}`:'')
+    +st('Win rate',closed.length?`${(wins.length/closed.length*100).toFixed(0)}%`:'—',
+        closed.length?`${wins.length}W · ${losses.length}L`:'')
+    +st('Profit factor',gl<0?(gw/-gl).toFixed(2):(gw>0?'∞':'—'),
+        closed.length?`+$${fmt(gw,0)} / −$${fmt(-gl,0)}`:'')
+    +st('Avg win',wins.length?usd(gw/wins.length):'—',
+        best?`best ${usd(best.pnl_usd||0)} ${esc(best.symbol||'')}`:'')
+    +st('Avg loss',losses.length?usd(gl/losses.length):'—',
+        worst?`worst ${usd(worst.pnl_usd||0)} ${esc(worst.symbol||'')}`:'')
+    +st('Typical hold',medHold?fmtDur(medHold):'—','')
+    +st('Funding',fund?`<span class="${fund>0?'neg':'pos'}">${usd(-fund)}</span>`:'—','');
+  const rows=[...open.map(p=>mdTradeRow(p,true)),...closed.map(p=>mdTradeRow(p,false))].join('');
+  $('mdbody').innerHTML=`<div class="mstats">${stats}</div>`
+    +(rows?`<table class="mdtab"><thead><tr><th>When</th><th>Position</th><th>Size</th>
+        <th>Entry</th><th>Exit</th><th>PnL</th><th>Held</th><th>Close</th></tr></thead>
+      <tbody>${rows}</tbody></table>`
+      :'<div class="empty">no trades yet</div>');
+}
+$('lbbar').addEventListener('click',ev=>{
+  const c=ev.target.closest('.lbc');if(c&&c.dataset.model)openModelModal(c.dataset.model);});
+$('mdclose').addEventListener('click',closeMd);
+$('mdmodal').addEventListener('click',ev=>{if(ev.target.id==='mdmodal')closeMd();});
+$('mdbody').addEventListener('click',ev=>{
+  if(ev.target.closest('.tlink')){closeMd();return;}   // reveal the chart the doc handler retargets
+  const r=ev.target.closest('.nclick');if(r&&r.dataset.id)openDetail(r.dataset.id);});
+
+// ---- usage modal: per-model credits / cost / analysis speed ----
+function tokfmt(n){n=n||0;return n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e3?(n/1e3).toFixed(0)+'k':String(n);}
+async function openUsage(){
+  $('usemodal').hidden=false;
+  $('usebody').innerHTML='<div class="empty">loading…</div>';
+  let d=null;
+  try{const r=await fetch('/api/arena/usage');if(r.ok)d=await r.json();}catch(e){}
+  if(!d){$('usebody').innerHTML='<div class="empty">failed to load usage</div>';return;}
+  const byA={};(d.analysis||[]).forEach(a=>{if(a.model)byA[a.model]=a;});
+  const ledger=d.ledger||{};
+  // Entrants first (leaderboard order), then any other ledger/DB models (e.g. the
+  // production bot's history in a shared ledger) as muted rows.
+  const order=entrants.map(e=>e.model);
+  const models=[...new Set([...order,...Object.keys(ledger),...Object.keys(byA)])];
+  // Competition start: snapshot's started_ms, else earliest first-analysis across models.
+  let start=arenaStart;
+  (d.analysis||[]).forEach(a=>{if(a.since_ms&&(!start||a.since_ms<start))start=a.since_ms;});
+  if(start){const days=Math.max(1,Math.ceil((Date.now()-start)/86400000));
+    $('usesub').textContent=`since ${new Date(start).toLocaleDateString('en-US',
+      {month:'short',day:'numeric',year:'numeric'})} · day ${days}`;}
+  const t={n:0,lat:0,cost:0,calls:0,inp:0,out:0,cch:0,est:0};
+  const spd=ms=>(ms/1000).toFixed(1)+'s';
+  const rows=models.map(m=>{
+    const a=byA[m]||{},l=ledger[m]||{};
+    const e=entrants.find(x=>x.model===m);
+    const label=e?(NAMES[e.key]||e.key):m.replace('#infra',' · infra');
+    const n=a.n||0,avg=a.avg_ms||0,med=a.med_ms||0,cch=(l.cache_read||0)+(l.cache_creation||0);
+    t.n+=n;t.lat+=n*avg;t.cost+=a.cost||0;t.calls+=l.calls||0;
+    t.inp+=l.input||0;t.out+=l.output||0;t.cch+=cch;t.est+=l.est_cost_usd||0;
+    return `<tr${e?'':' class="mut"'}>
+      <td>${modelIcon(m,14)} ${esc(label)}</td>
+      <td>${n||'—'}</td>
+      <td>${n&&med?spd(med):'—'}</td>
+      <td>${n&&avg?spd(avg):'—'}</td>
+      <td>${n?'$'+(a.cost||0).toFixed(2):'—'}</td>
+      <td>${l.calls||'—'}</td>
+      <td>${l.calls?tokfmt(l.input):'—'}</td>
+      <td>${l.calls?tokfmt(l.output):'—'}</td>
+      <td>${l.calls?tokfmt(cch):'—'}</td>
+      <td>${l.calls?'$'+(l.est_cost_usd||0).toFixed(2):'—'}</td></tr>`;
+  }).join('');
+  $('usebody').innerHTML=`<table class="ustab">
+    <tr><th>Model</th><th>Analyses</th><th>Med speed</th><th>Mean</th><th>Analysis $</th>
+      <th>API calls</th><th>Tokens in</th><th>Out</th><th>Cached</th><th>Est. total $</th></tr>
+    ${rows}
+    <tr class="tot"><td>total</td><td>${t.n}</td><td>—</td>
+      <td>${t.n&&t.lat?(t.lat/t.n/1000).toFixed(1)+'s':'—'}</td><td>$${t.cost.toFixed(2)}</td>
+      <td>${t.calls}</td><td>${tokfmt(t.inp)}</td><td>${tokfmt(t.out)}</td>
+      <td>${tokfmt(t.cch)}</td><td>$${t.est.toFixed(2)}</td></tr>
+  </table>
+  <div class="mut" style="padding:10px 14px;font-size:10.5px;line-height:1.55">
+    Model rows count news analyses only; shared plumbing (cache keep-warm, regime briefs)
+    sits in the muted infra row.</div>`;
+}
+$('usagebtn').addEventListener('click',openUsage);
+$('useclose').addEventListener('click',()=>$('usemodal').hidden=true);
+$('usemodal').addEventListener('click',ev=>{if(ev.target.id==='usemodal')$('usemodal').hidden=true;});
+
+// ---- docs modal (static content in the markup) ----
+$('docsbtn').addEventListener('click',()=>{$('docsmodal').hidden=false;});
+$('docsclose').addEventListener('click',()=>{$('docsmodal').hidden=true;});
+$('docsmodal').addEventListener('click',ev=>{if(ev.target.id==='docsmodal')$('docsmodal').hidden=true;});
+
+// ---- resizable layout ----
+// Drag the column divider to trade chart space against the news feed, or the divider above
+// Open positions to trade it against the chart. Persisted per browser; the topbar ⟲ button
+// (visible only when customized) or a double-click on a divider restores the defaults.
+let layoutCols=0,layoutPosh=0;   // 0 = default CSS sizing
+try{const s=JSON.parse(localStorage.getItem('arena_layout')||'{}');
+  layoutCols=+s.cols||0;layoutPosh=+s.posh||0;}catch(e){}
+function applyLayout(){try{
+  const g=$('grid'),pp=$('pospanel');
+  if(layoutCols)g.style.setProperty('--gcols',layoutCols+'fr 7px '+(100-layoutCols)+'fr');
+  else g.style.removeProperty('--gcols');
+  if(layoutPosh)pp.style.setProperty('--posh',layoutPosh+'%');
+  else pp.style.removeProperty('--posh');
+  $('layoutreset').hidden=!(layoutCols||layoutPosh);
+}catch(e){}}   // headless test DOM has no style.setProperty
+function saveLayout(){try{
+  if(layoutCols||layoutPosh)localStorage.setItem('arena_layout',JSON.stringify({cols:layoutCols,posh:layoutPosh}));
+  else localStorage.removeItem('arena_layout');}catch(e){}}
+function bindSplit(id,axis){
+  const el=$(id);let dragging=false;
+  el.addEventListener('pointerdown',e=>{dragging=true;el.setPointerCapture(e.pointerId);
+    el.classList.add('drag');document.body.style.userSelect='none';e.preventDefault();});
+  el.addEventListener('pointermove',e=>{
+    if(!dragging)return;
+    if(axis==='v'){const r=$('grid').getBoundingClientRect();if(!r.width)return;
+      layoutCols=Math.min(80,Math.max(30,(e.clientX-r.left)/r.width*100));}
+    else{const r=$('lcol').getBoundingClientRect();if(!r.height)return;
+      layoutPosh=Math.min(80,Math.max(12,(r.bottom-e.clientY)/r.height*100));}
+    applyLayout();});   // live resize; the chart follows via LWC autoSize
+  const end=()=>{if(!dragging)return;dragging=false;el.classList.remove('drag');
+    document.body.style.userSelect='';saveLayout();};
+  el.addEventListener('pointerup',end);el.addEventListener('pointercancel',end);
+  el.addEventListener('dblclick',()=>{if(axis==='v')layoutCols=0;else layoutPosh=0;
+    saveLayout();applyLayout();});
+}
+bindSplit('vsplit','v');bindSplit('hsplit','h');
+$('layoutreset').addEventListener('click',()=>{layoutCols=0;layoutPosh=0;saveLayout();applyLayout();});
+applyLayout();
+
+initChart(); connect();
+setInterval(renderFeed, 30000);   // refresh the relative "ago" timestamps
+</script>
+</body>
+</html>

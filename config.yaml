@@ -1,0 +1,221 @@
+# ============================================================================
+# hlbot tunables.  Secrets live in .env (never here).
+# Conservative defaults: news-alpha-first, optimize for staying net-positive.
+# ============================================================================
+
+# Master safety switch. true = analyze + alert + simulate fills, NO real orders.
+# Flip to false (or use the UI/kill-switch) only after validating signal quality.
+dry_run: true
+
+poll_interval_seconds: 3.0       # position-manager price/PnL poll cadence
+universe_refresh_seconds: 600    # how often to rebuild the tradable market map (picks up new listings)
+
+# Regime brief auto-refresh: rebuild the macro-climate context from recently-seen news
+# every N seconds so mid-session events (e.g. a big BTC sale) feed the judgment of
+# SUBSEQUENT news. Built at startup via scripts/build_regime.py. 0 disables.
+regime_context_file: "data/regime.md"
+regime_refresh_seconds: 43200    # 12h (~$3.5/mo on Sonnet); lower = fresher but pricier
+# Hand-curated few-shot exemplars for the analyzer (cached prefix block). Empty/absent file
+# = prompt unchanged. Mine candidates with scripts/mine_exemplars.py, curate by hand, and
+# A/B via scripts/backtest.py with a FRESH analysis-cache path before relying on them.
+exemplars_file: "data/exemplars.md"
+# Knowledge bridge: hand-written, DATED durable facts (policy, geopolitics, structural market
+# events) covering the model's training-cutoff -> present gap, so novelty/staleness judgment
+# isn't blind between pretraining and the 14d regime window. Facts only — no price levels
+# (the regime brief owns those), no advice. Empty/absent file = no block (prompt unchanged).
+# Prompt change: A/B with a fresh cache tag (backtest.py --bridge-file) before shipping.
+context_bridge_file: "data/context_bridge.md"
+regime_live_lookback_days: 14.0  # window of recent news summarized into the brief
+regime_min_items: 40             # need at least this many recent items to rebuild
+# Startup: backfill recent channel history so the regime has a full trailing window
+# immediately (matches the backtest). Gap-aware -> warm reboots only fetch what was missed.
+regime_backfill_days: 16.0
+
+# Anti-re-trade event memory: inject catalysts we've already entered in the last N days
+# into the analyzer prompt so a resurfaced same-event headline gets flagged stale (no tokens).
+catalyst_memory_days: 7.0
+catalyst_memory_refresh_seconds: 300
+
+# Persistent all-time token-usage ledger (live calls accumulate across restarts).
+# View with: python scripts/token_report.py   (backtests do NOT write to it)
+token_ledger_file: "data/token_usage.json"
+
+# Telegram news channels to ingest in real time (usernames without @, or t.me links).
+# Requires TELEGRAM_API_ID/HASH in .env and a one-time `python scripts/telegram_login.py`.
+# These feed the SAME pipeline as Tree (dedup -> analyzer -> risk), so the source
+# whitelist/blacklist and confidence gate apply. Example:
+# telegram_channels: ["tradfi", "AggrNews"]
+telegram_channels: ["trad_fin", "AggrNewswire"]   # BWEnews dropped: net-loser source in backtests
+enable_tree_feed: false           # Telegram-channels-only (set true to also use Tree)
+
+# Catch-up poll: every N sec, re-fetch each channel's newest messages as a backstop to the live
+# handler (which silently dies after a VPN/network drop) AND reconnect if the link is down. Keep
+# under max_news_age_seconds (120) so polled items are still fresh enough to trade. 0 = off.
+telegram_poll_seconds: 45
+
+# Feed-silence watchdog: alert (Telegram + UI) if NO news arrives for this many seconds — the
+# feeds auto-reconnect, but a silently-dead feed otherwise just stops trading with no signal.
+# Alerts once on silence, once again on recovery. 0 disables. Keep this day-scale: the curated
+# aggregators can be quiet for many hours, so a short threshold would just cry wolf.
+feed_silence_alert_seconds: 86400  # 1 day
+
+risk:
+  confidence_threshold: 0.80     # high-conviction gate (raised 0.78->0.80: 78-82% tier was a net loser)
+  account_size_usd: 10000.0      # for reference / context
+  # Confidence-tiered NOTIONAL (USD). At 5x, margin = notional/5 ($2.5k notional = $500 margin).
+  # 0.82 tier raised 5000 -> 7000 (2026-06-11): quarter-Kelly on BOTH replay windows said the
+  # 0.82-0.88 tier's realized edge supports ~2x (n=31-34); this is the disciplined HALF-step.
+  # Watch slippage_report.py + dashboard for ~a month before considering the rest.
+  size_tiers: [[0.78, 2500.0], [0.82, 7000.0], [0.88, 7500.0], [0.90, 10000.0]]  # 90%+ = max size
+  max_notional_usd: 10000.0      # hard cap ($2k margin at 5x)
+  base_notional_usd: 2500.0      # fallback if no tier matches
+  max_leverage: 5                # constant 5x (clamped to each market's own max)
+  max_concurrent_positions: 3
+  max_total_exposure_usd: 30000.0  # sum of open notional (3 concurrent x up to $10k)
+  daily_loss_limit_usd: 1500.0   # realized loss in a day -> halt (kill switch); ~15% of 10k
+  per_ticker_cooldown_seconds: 900   # don't re-enter same ticker within this window
+  # Feeds re-broadcast the same story for hours; after a stop-out, a reworded rebroadcast at
+  # t+2h previously relied entirely on the analyzer flagging is_stale. 2h window is safe
+  # because similarity_min 0.5 only suppresses the SAME STORY (distinct catalysts on the
+  # same ticker still trade). Raised 900 -> 7200 (validate shifts with scripts/backtest.py).
+  duplicate_window_seconds: 7200     # ignore a repeat of the same ticker+direction within this (even if faded)
+  duplicate_similarity_min: 0.5      # ...but only if it's the SAME STORY (token overlap >= this); 0 = old (ticker+dir only)
+  contrary_exit_min_confidence: 0.50 # close an open position on contrary news at/above this conf (below the entry gate)
+  slippage_pct: 0.01             # max slippage tolerated on live market (IOC) orders
+  dry_run_slippage_pct: 0.0005   # modeled adverse fill slippage in dry-run (5 bps) for realism
+  # Fallbacks if a time_sensitivity is missing from the maps below:
+  stop_loss_pct: 0.03
+  take_profit_pct: 0.03
+  time_exit_seconds: 3600
+  # Adaptive exits by analyzer time_sensitivity. Wider stops everywhere; quick "immediate"
+  # pops take a fixed TP (no whipsaw); longer "hours"/"days" plays trail (trail_pct > 0 =>
+  # no fixed TP, let the winner run).
+  exit_horizons:        { immediate: 3600, hours: 21600, days: 259200 }   # 1h / 6h / 72h
+  stop_loss_by_sensitivity:  { immediate: 0.03, hours: 0.03, days: 0.03 }  # OOS-validated
+  trail_pct_by_sensitivity:  { immediate: 0.0,  hours: 0.08, days: 0.08 }  # loose = mostly hold-to-horizon
+  # Breakeven stop (bot-side, composes with trailing): once a trade is up breakeven_arm_pct,
+  # the stop floors at entry*(1 +/- breakeven_offset_pct) — a faded pop is evidence against
+  # a news thesis. 0 = OFF; validate with scripts/optimize.py --breakeven + replay A/B
+  # before enabling (losers' median MFE was 1.1%, so arm ~0.015-0.02 is the candidate zone).
+  breakeven_arm_pct: 0.0
+  breakeven_offset_pct: 0.0
+  # Confidence haircuts (deterministic, applied before the gate/sizing):
+  liquidity_high_usd: 25000000   # crypto 24h notional >= this: no penalty
+  liquidity_med_usd:  10000000   # >= this: medium penalty; below: low-liquidity penalty
+  liquidity_penalty_med: 0.05   # flattened: medium & low illiquidity both 0.05 (re-tier if wanted)
+  liquidity_penalty_low: 0.05
+  listing_penalty: 0.20          # exchange listing/delisting news is front-run/competitive
+  # De-prioritize 2nd-order calls: if the ticker (or its name/cashtag) is NOT directly named in
+  # the news (e.g. "Alphabet raises capex" -> long NVDA), haircut confidence. 0 disables.
+  indirect_mention_penalty: 0.05
+  # Per-symbol confidence haircut for chronic underperformers (NVDA was the worst name in the
+  # 180d backtest: -$488 realized, over-traded mega-cap longs that chop). Add others as needed.
+  symbol_penalties: { NVDA: 0.05 }
+  # Brand-new HL markets are thin right after listing -> haircut for the first few hours.
+  new_listing_age_hours: 3.0
+  new_listing_penalty: 0.15
+  # Pre-IPO / "premarket" synthetic perps (riskier, thinner) -> trade at reduced size.
+  # No HL metadata flag exists for these, so this list is hand-maintained.
+  premarket_symbols: ["SPCX"]    # add other pre-IPO names as trade.xyz lists them
+  premarket_size_factor: 0.5
+  # Live order-book guard at entry (LIVE + dry-run; not backtested). trade.xyz equities are thin
+  # off-hours -> a wide spread / shallow book = bad fill, so reject. Applies only to these dexes
+  # ("xyz" = equities, "" = crypto). max_spread_pct<=0 disables; depth check off unless >0.
+  spread_guard_dexes: ["xyz"]
+  max_spread_pct: 0.015          # reject the entry if (ask-bid)/mid exceeds this (1.5%)
+  min_top_depth_usd: 0.0         # reject if top-of-book notional (thinner side) is below this (0 = off)
+
+filters:
+  skip_retweets: true
+  skip_replies: true
+  skip_quotes: false
+  max_news_age_seconds: 120      # ignore anything older than this (stale)
+  allowed_dexes:                 # "xyz" = trade.xyz equities; "" = HL crypto perps
+    - "xyz"
+    - ""
+  # If non-empty, ONLY act on these sources / twitter handles (case-insensitive
+  # substring match against source + title). Empty = consider all sources.
+  source_whitelist: []
+  source_blacklist: []    # (BWEnews is simply not ingested above, so no client-side drop needed)
+  market_blacklist: ["BRENTOIL", "GOLD"]   # structurally choppy commodities; net losers in backtests
+
+analyzer:
+  # Sonnet chosen via backtest A/B: best accuracy/consistency on regime-change
+  # catalysts (e.g. Saylor) while clearing the high-conviction gate. Haiku was
+  # inconsistent (dismissed catalysts as "routine"); Opus reasons well but is
+  # conservative on confidence. Swap to haiku for lowest cost / opus for max nuance.
+  model_fast: "claude-sonnet-4-6"
+  model_smart: "claude-opus-4-8"
+  temperature: 0.0               # 0 = deterministic, consistent (reproducible) classifications
+  escalate_margin: 0.0           # 0 = no Opus escalation (cost). >0 escalates borderline calls.
+  # Tiered triage: free regex prefilter -> cheap Haiku gate -> full model. Big cost/latency cut,
+  # BUT on low-volume curated channels it false-negatives real catalysts (backtest-confirmed) -
+  # leave OFF here; enable only for high-volume/noisy sources.
+  use_prefilter: false
+  use_triage: false
+  triage_model: "claude-haiku-4-5-20251001"
+  include_crypto_universe: true  # false trims the crypto symbol list from the prompt (saves tokens)
+  # Prompt-cache TTL for the static system blocks ("5m" or "1h"). News often arrives >5 min
+  # apart, so the 5m cache mostly expires unread (every call re-pays the cache write); "1h"
+  # writes cost 2x once but calls within the hour read at 0.1x — net cheaper at our cadence.
+  cache_ttl: "1h"
+  max_tokens: 1024
+  # Transient-error resilience: a one-shot catalyst can't be re-fetched, so retry the Claude call
+  # on rate-limit / timeout / connection / 5xx errors before giving up (exponential backoff).
+  max_retries: 4
+  retry_base_delay: 0.5
+  # --- speed / cost knobs ---
+  request_timeout_seconds: 30.0  # per-attempt HTTP cap (SDK default is 10 MIN — would stall past staleness)
+  # Keep the cached prompt prefix HOT: re-warm if no call touched it for ~45 min (cache reads refresh
+  # the 1h TTL). First headline after a quiet stretch skips the cold prefill / 2x cache rewrite on the
+  # news->order path, and sparse calls bill at the 0.1x cached rate. Costs ~$1-2/mo. 0 = off.
+  cache_keepwarm_seconds: 2700
+  strict_tool: true              # API-enforced schema-valid analyzer output (auto-falls-back if rejected)
+  # --- burst aggregation (OFF until validated via backtest A/B) ---
+  # Wires print one event as several messages seconds apart (EPS line, then revenue, then
+  # guidance). >0: when a piece arrives for a ticker that has analyzed pieces inside this
+  # window, re-analyze the chronological concatenation and act on THAT verdict; piece 1
+  # always acts instantly on its solo verdict. p50 same-ticker piece gap ~220s -> 300 is
+  # the natural test value. Adds ~1 analysis per multi-piece burst. See analysis/burst.py.
+  burst_window_seconds: 0
+  # --- skeptic entry confirmation (OFF until validated via backtest A/B) ---
+  # Every would-be ENTRY (post-gate) gets a second call to a stronger model framed as a
+  # skeptic, fed the market tape + measured pre-news move (evidence the first pass never
+  # sees). Direction disagreement vetoes; rule "min" sizes off min(fast, skeptic) and
+  # re-gates at confirm_gate (separate from the 0.80 gate — Opus calibrates conservative;
+  # sweep 0.70-0.82 in the replay). Fails OPEN on API errors. ~3-8s + cents per entry.
+  # Validate: backtest.py --source telegram with confirm_entries true — vetoed trades must
+  # be net-negative; verdicts cache to data/bt_cache_confirm_<model>.json (re-runs free).
+  confirm_entries: false
+  confirm_model: "claude-opus-4-8"
+  confirm_rule: "min"            # "min" | "veto_only" (direction check only, no resizing)
+  confirm_gate: 0.78
+  effort: ""                     # "" = model default. "low" trims latency/output tokens on Sonnet 4.6
+                                 # classification (Anthropic guidance) but can shift confidence
+                                 # calibration — A/B with scripts/backtest.py before enabling.
+
+ui:
+  host: "127.0.0.1"              # localhost only by default
+  port: 8000
+
+# 5-LLM news-trading arena (run via `python -m hlbot.main_arena`, dashboard :8001). Each entrant
+# trades the SAME news with identical risk/sizing/exits EXCEPT its confidence gate, on its own
+# $10k. Gates from Phase-1 training (replay + OOS + earnings bench).
+#
+# GO-LIVE is double-gated for safety: a lane trades REAL money only when BOTH live: true (below)
+# AND its wallet secrets exist (ARENA_<KEY>_ADDRESS / _SECRET in .env). So live: true with no
+# funded wallet stays PAPER — and funding wallets one at a time controls the rollout regardless
+# of the flags here. Funding decision 2026-06-21 (control_arms + multisample): fund the three
+# with validated event-selection skill; HOLD deepseek (anti-skill direction, noisiest dispersion)
+# and grok (n=19 noise). Per-lane daily-loss halt isolation is in (one lane's $1.5k/day limit no
+# longer freezes the others); the manual kill switch stays global.
+arena:
+  capital_per_model_usd: 10000.0
+  ui_port: 8001
+  max_tokens: 2048               # thinking models (DeepSeek V4 Pro) truncate->empty below 2048
+  entrants:
+    - {key: gemini,   model: "google:gemini-3.5-flash",  gate: 0.85, wallet: gemini,   live: true}
+    - {key: gpt,      model: "openai:gpt-5.4",            gate: 0.80, wallet: gpt,      live: true}
+    - {key: sonnet,   model: "claude-sonnet-4-6",         gate: 0.80, wallet: sonnet,   live: true}
+    - {key: deepseek, model: "deepseek:deepseek-v4-pro",  gate: 0.85, wallet: deepseek, live: false}
+    - {key: grok,     model: "xai:grok-4.3",              gate: 0.85, wallet: grok,     live: false}

@@ -1,0 +1,15 @@
+hyperliquid-python-sdk>=0.19.0
+eth-account>=0.10.0
+anthropic>=0.69.0
+openai>=1.50.0          # arena: GPT + OpenAI-compatible providers (DeepSeek, xAI/Grok, Zhipu/GLM)
+google-genai>=0.3.0     # arena: Gemini provider
+websockets>=13.0
+httpx>=0.27.0
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+aiosqlite>=0.20.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pyyaml>=6.0.1
+python-dotenv>=1.0.1
+telethon>=1.36.0

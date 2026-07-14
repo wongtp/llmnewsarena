@@ -1,0 +1,1653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>hlbot · news trading dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#090d14; --panel:#0f141d; --card:#121927; --ink:#0b0f17;
+          --line:#1d2535; --line2:#31405c; --fg:#dde5f0; --muted:#8b96aa; --faint:#5f6a80;
+          --green:#2ebd85; --red:#f6465d; --blue:#5d9bfc; --yellow:#e0a93e;
+          --green-t:#2ebd851c; --red-t:#f6465d1c; --blue-t:#5d9bfc1f; --yellow-t:#e0a93e1c; }
+  * { box-sizing:border-box; }
+  html { scrollbar-width:thin; scrollbar-color:#2a3447 transparent; }
+  ::-webkit-scrollbar { width:10px; height:10px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:#222b3d; border-radius:99px; border:2px solid var(--panel); }
+  ::-webkit-scrollbar-thumb:hover { background:#31405c; }
+  ::selection { background:#5d9bfc3d; }
+  /* one-page app shell: the page itself never scrolls — individual sections do */
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--fg); overflow:hidden;
+         display:flex; flex-direction:column;
+         font:13.5px/1.5 Inter,-apple-system,'Segoe UI',Roboto,sans-serif;
+         -webkit-font-smoothing:antialiased; }
+  a { color:var(--blue); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  button { font:inherit; font-size:12.5px; color:var(--fg); background:#1a2231;
+           border:1px solid var(--line); padding:6px 12px; border-radius:8px; cursor:pointer;
+           transition:border-color .15s, background .15s, color .15s; }
+  button:hover { border-color:var(--line2); }
+
+  /* ---- header: brand · alerts · feed links · clock · mode/halt controls ---- */
+  header { display:flex; align-items:center; gap:14px; padding:9px 18px; flex-wrap:wrap;
+           background:#0f141de0; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+           border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20; }
+  .brand { display:flex; align-items:center; gap:10px; }
+  .logo { display:grid; place-items:center; width:32px; height:32px; font-size:15px;
+          border-radius:9px; background:linear-gradient(140deg,#16223a,#101724);
+          border:1px solid #24304a; }
+  h1 { font-size:14.5px; font-weight:700; margin:0; line-height:1.15; }
+  .bsub { display:block; font-size:9.5px; color:var(--faint); letter-spacing:.07em;
+          text-transform:uppercase; }
+  .hpill { font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+           padding:4px 11px; border-radius:99px; }
+  .hpill.warn { background:var(--yellow-t); color:var(--yellow); border:1px solid #e0a93e4d;
+                animation:throb 1.6s ease-in-out infinite; }
+  .hpill.halt { background:var(--red-t); color:var(--red); border:1px solid #f6465d55; }
+  @keyframes throb { 50% { opacity:.5; } }
+  .spacer { margin-left:auto; }
+  .hgroup { display:flex; align-items:stretch; background:var(--ink);
+            border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .hstat { display:flex; align-items:center; gap:7px; padding:6px 12px; font-size:10.5px;
+           font-weight:650; letter-spacing:.08em; color:var(--muted); cursor:default; }
+  .hstat + .hstat { border-left:1px solid var(--line); }
+  .hstat b { font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:.02em; }
+  .hstat b:empty { display:none; }
+  .lat-ok { color:var(--green); } .lat-warn { color:var(--yellow); } .lat-bad { color:var(--red); }
+  .dot { width:8px; height:8px; border-radius:50%; background:#3a4356; flex:none; }
+  .dot.ok { background:var(--green); box-shadow:0 0 7px #2ebd85aa; }
+  .dot.bad { background:var(--red); box-shadow:0 0 7px #f6465daa; }
+  .hclock { display:flex; flex-direction:column; align-items:flex-end; line-height:1.3; }
+  .hclock b { font-size:13.5px; font-weight:650; font-variant-numeric:tabular-nums; }
+  .hclock span { font-size:10px; color:var(--faint); letter-spacing:.06em;
+                 font-variant-numeric:tabular-nums; }
+  .hctl { display:flex; gap:8px; }
+  .modebtn { font-size:11px; font-weight:800; letter-spacing:.1em; text-transform:uppercase;
+             padding:7px 16px; border-radius:9px; background:var(--ink); color:var(--muted); }
+  .modebtn.dry { background:var(--blue-t); color:var(--blue); border-color:#5d9bfc4d; }
+  .modebtn.live { background:var(--red-t); color:var(--red); border-color:#f6465d66;
+                  box-shadow:0 0 14px #f6465d2e; }
+  .modebtn:hover { filter:brightness(1.2); }
+  .hbtn { border-radius:9px; padding:7px 14px; font-size:12px; background:var(--ink); }
+  .hbtn.resume { background:var(--green-t); color:var(--green); border-color:#2ebd854d; }
+
+  /* ---- layout ----
+     Everything fits the viewport: .wrap fills the space under the header, each column
+     is a flex stack, and the .grow panel in each column (closed trades / live feed)
+     absorbs the leftover height and scrolls internally. */
+  .wrap { flex:1; min-height:0; display:grid; grid-template-columns: 1.7fr 1fr;
+          gap:16px; padding:16px; }
+  .col { display:flex; flex-direction:column; gap:16px; min-height:0; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:13px;
+           overflow:hidden; box-shadow:0 1px 0 #ffffff05 inset, 0 10px 30px #00000038;
+           display:flex; flex-direction:column; flex:none; min-height:0; }
+  .panel.grow { flex:1 1 0; }
+  .panel h2 { font-size:10.5px; font-weight:700; margin:0; padding:10px 14px; flex:none;
+              border-bottom:1px solid var(--line); color:var(--muted);
+              text-transform:uppercase; letter-spacing:.11em; }
+  /* narrow screens can't fit one page — fall back to a normally scrolling column
+     (panels are auto-height here, so the flex-grow children must be reset too or
+     they'd collapse to zero inside an unconstrained parent) */
+  @media (max-width:1100px){
+    body { overflow:auto; display:block; }
+    .wrap { grid-template-columns:1fr; }
+    .panel.grow { flex:none; }
+    .feed { flex:none; max-height:70vh; }
+    .hist { flex:none; max-height:48vh; }
+  }
+  .stats { display:flex; gap:18px; padding:12px 14px; }
+  .stat b { display:block; font-size:17px; font-weight:650; font-variant-numeric:tabular-nums; }
+  .stat span { color:var(--muted); font-size:11px; }
+  .stats.acct { justify-content:space-between; gap:10px; flex-wrap:nowrap; }
+  .stats.acct .stat b { font-size:15.5px; white-space:nowrap; }
+  .stats.acct .stat span { font-size:10px; text-transform:uppercase; letter-spacing:.05em; white-space:nowrap; }
+  table { width:100%; border-collapse:collapse; }
+  th,td { text-align:left; padding:6px 12px; border-bottom:1px solid var(--line); font-size:12.5px; }
+  th { color:var(--muted); font-weight:500; }
+
+  /* ---- live feed: one raised card per news item, so boundaries read at a glance ---- */
+  .feed { flex:1 1 0; min-height:0; overflow:auto; padding:10px; display:flex; flex-direction:column; gap:9px; }
+  .row { padding:11px 13px; border:1px solid var(--line); border-left-width:3px;
+         border-radius:10px; background:var(--card); line-height:1.5; font-size:13px;
+         transition:background .15s; }
+  .row:hover { background:#151d2d; }
+  .row .meta { color:var(--muted); font-size:11px; display:flex; align-items:center; gap:8px;
+               margin-bottom:6px; font-variant-numeric:tabular-nums; }
+  .row .meta span:nth-child(2) { background:#ffffff08; border:1px solid var(--line);
+                                 border-radius:99px; padding:1px 9px; font-size:10.5px; }
+  .row .body { margin-top:4px; font-size:13.5px; line-height:1.55; }
+  .row .body b { font-size:14px; color:var(--fg); }
+  /* one feed row stacks three parts — news / 🤖 analysis / verdict — divided by faint rules
+     so each reads clearly; the verdict (enter/reject + reason) is emphasized. */
+  .row .analysis { margin-top:8px; padding-top:8px; border-top:1px dashed #273043;
+                   font-size:13px; line-height:1.55; }
+  .row .analysis b { color:var(--fg); }
+  /* while the analyzer is working on a fresh item: pulsing placeholder in the verdict slot */
+  .row .analysis.pending { color:var(--muted); animation:throb 1.6s ease-in-out infinite; }
+  /* latency + $ cost of the Claude call(s), shown right on the analysis line */
+  .ameta { font-size:10.5px; color:var(--faint); font-variant-numeric:tabular-nums;
+           white-space:nowrap; }
+  .row .verdict { margin-top:8px; padding-top:8px; border-top:1px dashed #273043;
+                  font-size:13.5px; font-weight:600; line-height:1.5; }
+  .row .verdict.good { color:var(--green); }
+  .row .verdict .rsn { font-weight:500; color:var(--muted); }
+  /* verdict tint: news we traded glows faint green, news the bot rejected faint red
+     (replaces the old ✕ reject marker — the reason text stays in the verdict slot) */
+  .enter { border-left-color:var(--green); background:#2ebd850f; }
+  .enter:hover { background:#2ebd851a; }
+  .rejected { border-left-color:#f6465d59; background:#f6465d0c; }
+  .rejected:hover { background:#f6465d17; }
+  .reject { border-left-color:#525d73; }
+  .news { border-left-color:var(--blue); } .skip { border-left-color:#3a4356; }
+  .trade { border-left-color:var(--yellow); }
+  .pill { font-size:10.5px; font-weight:700; padding:1.5px 7px; border-radius:5px; letter-spacing:.04em; }
+  /* per-news ticker boxes: news-time price -> live price, % change since the news.
+     Tinted by venue (blue = HL crypto, yellow = trade.xyz); click snaps the chart. */
+  .nticks { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
+  .ntick { display:flex; flex-direction:column; gap:2px; min-width:128px; padding:6px 9px;
+           background:var(--ink); border:1px solid var(--line); border-radius:8px; cursor:pointer;
+           font:inherit; color:var(--fg); text-align:left; transition:border-color .15s; }
+  .ntick:hover { border-color:var(--blue); }
+  .ntick.cry { background:#5d9bfc12; border-color:#5d9bfc38; }
+  .ntick.xyz { background:#e0a93e10; border-color:#e0a93e38; }
+  .ntick .ntop { display:flex; align-items:center; gap:6px; }
+  .ntick .ntop b { font-size:12.5px; letter-spacing:.02em; }
+  .nt-tag { font-size:8.5px; letter-spacing:.06em; border:1px solid var(--line); border-radius:4px;
+            padding:0 4px; color:var(--muted); }
+  .ntick.cry .nt-tag { color:var(--blue); border-color:#5d9bfc55; }
+  .ntick.xyz .nt-tag { color:var(--yellow); border-color:#e0a93e55; }
+  .nt-pct { margin-left:auto; font-size:11px; font-weight:700; padding:1px 5px; border-radius:4px;
+            background:#3a435655; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .nt-pct.up { background:#2ebd8526; color:var(--green); }
+  .nt-pct.dn { background:#f6465d26; color:var(--red); }
+  .ntick .nbot { display:flex; justify-content:space-between; gap:12px; font-size:11px;
+                 color:var(--muted); font-variant-numeric:tabular-nums; }
+  .nt-now { color:var(--fg); }
+  .long { color:var(--green); } .short { color:var(--red); }
+
+  /* ---- position cards ---- */
+  .pcards { padding:10px; display:flex; flex-direction:column; gap:10px; }
+  #positions { max-height:26vh; overflow:auto; }   /* many open positions scroll, not push */
+  .hist { flex:1 1 0; min-height:0; overflow:auto; }
+  .pcard { border:1px solid var(--line); border-left:3px solid #3a4356; border-radius:11px;
+           padding:11px 13px; background:var(--card); }
+  .pcard.pos-long { border-left-color:var(--green); }
+  .pcard.pos-short { border-left-color:var(--red); }
+  .pcard.paper { border-style:dashed; }
+  .pill.long { background:var(--green-t); color:var(--green); }
+  .pill.short { background:var(--red-t); color:var(--red); }
+  .pill.paper { background:var(--yellow-t); color:var(--yellow); letter-spacing:.03em; }
+  .pnews { margin-top:6px; font-size:12px; color:var(--muted); }
+  .pnews i { color:var(--fg); }
+  .prat { margin-top:3px; font-size:11.5px; color:var(--muted); }
+  .muted { color:var(--muted); font-size:12px; }
+  .empty { padding:12px 14px; color:var(--muted); font-size:12px; }
+  /* live perps-style ticket (open positions): flat exchange-row columns */
+  .lev { font-size:11px; color:var(--muted); border:1px solid var(--line); border-radius:4px; padding:0 5px; }
+  .prow { display:grid; grid-template-columns:1.5fr repeat(5, 1fr); gap:10px; align-items:start; }
+  .pc .lbl { font-size:9.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted);
+             margin-bottom:2px; white-space:nowrap; }
+  .pc .val { font-size:14.5px; font-weight:650; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .pc .sub { font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; margin-top:1px;
+             white-space:nowrap; }
+  .pc.sym .symtop { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .pc.sym .tick { font-weight:700; font-size:14.5px; }
+  .pc.sym .sub { display:flex; align-items:center; gap:6px; margin-top:4px; }
+  .tag { font-size:9px; letter-spacing:.05em; color:var(--muted); border:1px solid var(--line);
+         border-radius:4px; padding:0 4px; }
+  .tag.xyz { color:var(--yellow); border-color:#e0a93e55; }
+  .val.pos,.sub.pos { color:var(--green); } .val.neg,.sub.neg { color:var(--red); }
+  .pplan { display:flex; gap:16px; flex-wrap:wrap; align-items:center; margin-top:10px;
+           font-size:12px; font-variant-numeric:tabular-nums; }
+  .pplan .lbl { color:var(--muted); text-transform:uppercase; font-size:10px; letter-spacing:.05em; margin-right:4px; }
+  .xclose { font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+            color:var(--red); background:var(--red-t,#e2495a14); border:1px solid #e2495a4d;
+            border-radius:7px; padding:3px 9px; cursor:pointer; }
+  .xclose:hover { background:#e2495a2e; }
+
+  /* ---- chart panel (TradingView lightweight-charts fed by Hyperliquid data) ---- */
+  .chead { display:flex; align-items:center; gap:20px; row-gap:8px; padding:10px 14px;
+           border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .pairbtn { display:flex; align-items:center; gap:8px; background:var(--ink); border:1px solid var(--line);
+             border-radius:9px; padding:7px 11px; font-size:14px; font-weight:700; }
+  .pairbtn:hover { border-color:var(--blue); }
+  .caret { color:var(--muted); font-size:10px; }
+  .cdot { width:18px; height:18px; min-width:18px; border-radius:50%; display:inline-flex; align-items:center;
+          justify-content:center; font-size:10px; font-weight:800; color:#fff; background:#3a4356; }
+  .cdot.sm { width:15px; height:15px; min-width:15px; font-size:9px; margin-right:7px; }
+  .cicon { width:18px; height:18px; min-width:18px; border-radius:50%; object-fit:contain;
+           background:#1a2231; vertical-align:middle; }
+  .cicon.sm { width:15px; height:15px; min-width:15px; margin-right:7px; }
+  #c-ico { display:inline-flex; align-items:center; }
+  .dexb { font-size:9px; letter-spacing:.06em; color:var(--yellow); border:1px solid #e0a93e55;
+          border-radius:4px; padding:0 4px; }
+  .cstat { display:flex; flex-direction:column; gap:1px; }
+  .cstat .clbl { font-size:9.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); white-space:nowrap; }
+  .cstat b { font-size:12.5px; font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .dim { color:var(--muted); font-weight:400; }
+  .ctools { display:flex; align-items:center; gap:2px; padding:5px 10px; border-bottom:1px solid var(--line); }
+  .ival { background:none; border:none; color:var(--muted); padding:4px 9px; font-size:12px; border-radius:7px; }
+  .ival:hover { color:var(--fg); background:#ffffff08; }
+  .ival.on { background:var(--blue-t); color:var(--blue); font-weight:700; }
+  #chart { position:relative; height:clamp(300px, 40vh, 470px); }
+  .cmsg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+          color:var(--muted); font-size:13px; z-index:3; pointer-events:none; }
+  .tlink { color:var(--blue); cursor:pointer; }
+  .tlink:hover { text-decoration:underline; }
+  .tick { cursor:pointer; }
+
+  /* ---- market switcher modal ---- */
+  .mkov { position:fixed; inset:0; background:#05070acc; backdrop-filter:blur(5px);
+          -webkit-backdrop-filter:blur(5px); z-index:50; display:flex;
+          align-items:flex-start; justify-content:center; padding:7vh 16px 16px; }
+  .mkov[hidden] { display:none; }
+  .mkbox { width:min(780px, 100%); background:var(--panel); border:1px solid var(--line2); border-radius:14px;
+           display:flex; flex-direction:column; max-height:80vh; box-shadow:0 24px 64px #000c; }
+  #mksearch { margin:14px 14px 10px; padding:10px 13px; background:var(--ink); color:var(--fg);
+              border:1px solid var(--line); border-radius:9px; font:13px ui-monospace,Menlo,Consolas,monospace;
+              outline:none; transition:border-color .15s, box-shadow .15s; }
+  #mksearch:focus { border-color:var(--blue); box-shadow:0 0 0 3px #5d9bfc22; }
+  .mkchips { display:flex; gap:6px; padding:0 14px 10px; }
+  .chip { font-size:10.5px; letter-spacing:.05em; padding:3px 10px; border-radius:99px;
+          background:var(--ink); color:var(--muted); border:1px solid var(--line); }
+  .chip.on { background:var(--blue-t); color:var(--blue); border-color:#5d9bfc55; }
+  .mklist { overflow:auto; border-top:1px solid var(--line); }
+  .mktab th { position:sticky; top:0; background:var(--panel); font-size:10.5px; letter-spacing:.05em;
+              text-transform:uppercase; z-index:2; }
+  .mktab td, .mktab th { padding:7px 14px; white-space:nowrap; }
+  .mktab .r { text-align:right; font-variant-numeric:tabular-nums; }
+  .mkrow { cursor:pointer; }
+  .mkrow:hover { background:#141b29; }
+  .mkrow.cur td { background:#5d9bfc12; }
+  .mkfoot { display:flex; padding:9px 14px; border-top:1px solid var(--line); font-size:11px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo">🌳</span>
+    <div><h1>hlbot</h1><span class="bsub">news-catalyst trader</span></div>
+  </div>
+  <span id="conn" class="hpill warn" hidden>reconnecting…</span>
+  <span id="halt-pill" class="hpill halt" hidden>HALTED</span>
+  <span class="spacer"></span>
+  <div class="hgroup">
+    <span class="hstat" id="hl-stat" data-label="Hyperliquid stream"><span class="dot" id="hl-dot"></span>HL<b id="hl-lat"></b></span>
+    <span class="hstat" id="tg-stat" data-label="Telegram feed"><span class="dot" id="tg-dot"></span>TG</span>
+    <span class="hstat" id="tree-stat" data-label="Tree of Alpha feed" hidden><span class="dot" id="tree-dot"></span>TREE</span>
+  </div>
+  <div class="hclock"><b id="clock">--:--:--</b><span id="clock-utc">UTC --:--</span></div>
+  <div class="hctl">
+    <button id="mode" class="modebtn" onclick="toggleMode()">—</button>
+    <button id="haltbtn" class="hbtn" onclick="toggleHalt()" title="Pause/resume new trade entries">⏸ Halt</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="col">
+    <div class="panel">
+      <div class="chead">
+        <button id="pairbtn" class="pairbtn" title="Switch market — search all tradable pairs">
+          <span id="c-ico"><span class="cdot">·</span></span>
+          <span id="c-pair">—</span>
+          <span class="dexb" id="c-dexb" style="display:none">XYZ</span>
+          <span class="caret">▾</span>
+        </button>
+        <div class="cstat"><span class="clbl">Last</span><b id="c-last">—</b></div>
+        <div class="cstat"><span class="clbl">Index</span><b id="c-index">—</b></div>
+        <div class="cstat"><span class="clbl">24h Change</span><b id="c-chg">—</b></div>
+        <div class="cstat"><span class="clbl">24h Volume</span><b id="c-vol">—</b></div>
+        <div class="cstat"><span class="clbl">Open Interest</span><b id="c-oi">—</b></div>
+        <div class="cstat"><span class="clbl">Funding / Countdown</span>
+          <b><span id="c-fund">—</span><span class="dim"> / </span><span id="c-cd">—</span></b></div>
+        <div class="cstat"><span class="clbl">Market Cap</span><b id="c-mc">—</b></div>
+        <div class="cstat"><span class="clbl">FDV</span><b id="c-fdv">—</b></div>
+      </div>
+      <div class="ctools">
+        <div id="ivals"></div>
+      </div>
+      <div id="chart"><div class="cmsg" id="c-msg">loading chart…</div></div>
+    </div>
+
+    <div class="panel">
+      <h2 id="open-h2">Open positions</h2>
+      <div id="positions" class="pcards"></div>
+    </div>
+    <div class="panel grow">
+      <h2>Closed trades</h2>
+      <div id="history" class="pcards hist"></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="panel">
+      <h2>Account</h2>
+      <div class="stats acct">
+        <div class="stat"><b id="a-bal">—</b><span>account balance</span></div>
+        <div class="stat"><b id="a-avail">—</b><span>available margin</span></div>
+        <div class="stat"><b id="a-ratio">—</b><span>account ratio</span></div>
+        <div class="stat"><b id="a-upnl">$0.00</b><span>unrealized PnL</span></div>
+      </div>
+    </div>
+    <div class="panel grow">
+      <h2>Live feed</h2>
+      <div id="feed" class="feed"></div>
+    </div>
+  </div>
+</div>
+
+<!-- market switcher: top-volume list + search over every tradable pair -->
+<div class="mkov" id="mkov" hidden>
+  <div class="mkbox">
+    <input id="mksearch" type="text" placeholder="Search markets …" autocomplete="off" spellcheck="false">
+    <div class="mkchips" id="mkchips"></div>
+    <div class="mklist">
+      <table class="mktab">
+        <thead><tr><th>Market</th><th class="r">Price</th><th class="r">Volume</th>
+          <th class="r">Change</th><th class="r">OI</th><th class="r">Funding</th></tr></thead>
+        <tbody id="mkrows"></tbody>
+      </table>
+    </div>
+    <div class="mkfoot"><span id="mkcount"></span><span class="spacer"></span>
+      <span>[enter] select first · [esc] close</span></div>
+  </div>
+</div>
+
+<script src="/static/lightweight-charts.js?v=4.1.3"></script>
+<script>
+const $ = id => document.getElementById(id);
+let closedTrades = [];             // closed positions (both modes); filtered on display
+const positions = new Map();
+const feedRows = new Map();        // news_id -> {el,news,analysis,decision}: one feed row per item, enriched in place
+
+function fmt(n, d=2){ return (n||0).toLocaleString(undefined,{maximumFractionDigits:d}); }
+function ts(t){ return new Date(t? t : Date.now()).toLocaleTimeString(); }
+
+// ---- rich position cards --------------------------------------------------
+// Ticker links don't open the Hyperliquid app — they retarget the in-page chart
+// (data-coin/data-sym + the delegated click handler in the chart section).
+// data-focus carries the trade's open time so the chart snaps to that moment.
+function tickLink(p){ return `<a class="tick" href="#" data-coin="${esc(p.market||'')}"
+  data-sym="${esc(p.symbol||'')}" data-focus="${p.opened_ms||''}" title="Show on chart">${esc(p.symbol)}</a>`; }
+function fmtDur(ms){ if(!ms||ms<0) return '—'; const h=ms/3600000;
+  if(h>=48) return (h/24).toFixed(0)+'d'; if(h>=1) return h.toFixed(0)+'h'; return Math.max(1,Math.round(ms/60000))+'m'; }
+function fmtWhen(ms){ return ms? new Date(ms).toISOString().slice(0,19).replace('T',' ')+'Z' : '—'; }
+function movePct(entry, px){ if(!entry||!px) return ''; const d=(px-entry)/entry*100; return (d>=0?'+':'')+d.toFixed(1)+'%'; }
+function upnlStr(v){ return (v>=0?'+$':'−$') + fmt(Math.abs(v||0),2); }
+function signpct(v, d=1){ return (v>=0?'+':'') + (v||0).toFixed(d) + '%'; }
+function newsRat(p){
+  const url = safeUrl(p.link);
+  const news = (p.news_source||p.news_title)
+    ? `<div class="pnews">📰 ${esc(p.news_source||'')}: <i>${esc((p.news_title||'').slice(0,160))}</i> ${url?`<a href="${url}" target="_blank" rel="noopener">↗</a>`:''}</div>` : '';
+  const rat = p.rationale ? `<div class="prat">🤖 ${esc(p.rationale)}</div>` : '';
+  return news + rat;
+}
+function posCard(p, closed){ return closed ? closedCard(p) : openCard(p); }
+
+function kusd(v){ const a = Math.abs(v||0);
+  return (v<0?'−':'')+'$'+(a>=1000 ? (a/1000).toFixed(2)+'K' : a.toFixed(2)); }
+function unitOf(p){ return p.dex ? 'shares' : esc(p.symbol||''); }
+// Funding from the PnL point of view: paying funding is a cost (red), receiving is green.
+function fundParts(f){
+  const v = -(f||0);
+  return { txt: upnlStr(v), cls: v>0?'pos':(v<0?'neg':''), sub: (f||0)>=0?'paid':'received' };
+}
+function symCell(p){
+  return `<div class="pc sym">
+    <div class="symtop">${tickLink(p)}<span class="tag">PERP</span>
+      ${p.dex?`<span class="tag xyz">${esc(p.dex.toUpperCase())}</span>`:''}
+      ${p.dry_run?'<span class="pill paper">🧪</span>':''}</div>
+    <div class="sub"><span class="pill ${p.side}">${(p.side||'').toUpperCase()}</span>
+      <span class="lev">${p.leverage}×</span><span>conf ${Math.round((p.confidence||0)*100)}%</span></div>
+  </div>`;
+}
+
+function openCard(p){
+  const id = p.id;
+  const cls = (p.upnl!=null) ? (p.upnl>=0?'pos':'neg') : '';
+  const up = (p.upnl!=null) ? upnlStr(p.upnl) : '—';
+  const upp = (p.upnl!=null && p.notional_usd) ? signpct(p.upnl/p.notional_usd*100,2) : '';
+  const stop = effStopPx(p);
+  const trailing = p.trail_pct>0 && stop>0 && Math.abs(stop-p.stop_loss)>1e-9;
+  const f = fundParts(p.funding_usd);
+  const remain = p.time_exit_ms ? fmtDur(p.time_exit_ms-Date.now()) : '—';
+  let tgt;
+  if(p.trail_pct>0) tgt = `<span><span class="lbl">Trail</span>${(p.trail_pct*100).toFixed(1)}%</span>`;
+  else if(p.take_profit>0) tgt = `<span><span class="lbl">TP</span>${fmt(p.take_profit,4)} <span class="muted">(${movePct(p.entry_px,p.take_profit)})</span></span>`;
+  else tgt = `<span><span class="lbl">Target</span>time-exit</span>`;
+  return `<div class="pcard pos-${p.side}${p.dry_run?' paper':''}" data-id="${id}">
+    <div class="prow">
+      ${symCell(p)}
+      <div class="pc"><div class="lbl">Spot</div><div class="val" id="mk-${id}">${p.mark!=null?fmt(p.mark,4):'—'}</div><div class="sub">$${fmt(p.entry_px,4)} open</div></div>
+      <div class="pc"><div class="lbl">Size</div><div class="val" id="sz-${id}">${kusd(p.notional_usd + (p.upnl||0))}</div><div class="sub">${fmt(p.size,4)} ${unitOf(p)}</div></div>
+      <div class="pc"><div class="lbl">PnL</div><div class="val ${cls}" id="up-${id}">${up}</div><div class="sub ${cls}" id="upr-${id}">${upp}</div></div>
+      <div class="pc"><div class="lbl">Funding</div><div class="val ${f.cls}" id="fd-${id}">${f.txt}</div><div class="sub" id="fds-${id}">${f.sub}</div></div>
+      <div class="pc"><div class="lbl">Stop Loss</div><div class="val" id="st-${id}">${stop>0?fmt(stop,4):'—'}</div><div class="sub" id="stc-${id}">${trailing?'trailing':(stop>0?movePct(p.entry_px,stop):'')}</div></div>
+    </div>
+    <div class="pplan">
+      ${tgt}
+      <span><span class="lbl">Exit</span><span id="ex-${id}">in ${remain}</span></span>
+      <span class="muted spacer">${fmtWhen(p.opened_ms)}</span>
+      <button class="xclose" onclick="closePos('${id}','${esc(p.symbol||'')}',${!!p.dry_run})">✕ close</button>
+    </div>
+    ${newsRat(p)}
+  </div>`;
+}
+
+function closedCard(p){
+  const cls = p.pnl_usd>=0?'pos':'neg';
+  const pnlp = p.notional_usd ? signpct(p.pnl_usd/p.notional_usd*100,2) : '';
+  const f = fundParts(p.funding_usd);
+  return `<div class="pcard pos-${p.side}${p.dry_run?' paper':''}">
+    <div class="prow">
+      ${symCell(p)}
+      <div class="pc"><div class="lbl">Exit</div><div class="val">${fmt(p.exit_px,4)}</div><div class="sub">$${fmt(p.entry_px,4)} open</div></div>
+      <div class="pc"><div class="lbl">Size</div><div class="val">${kusd(p.notional_usd)}</div><div class="sub">${fmt(p.size,4)} ${unitOf(p)}</div></div>
+      <div class="pc"><div class="lbl">PnL</div><div class="val ${cls}">${upnlStr(p.pnl_usd)}</div><div class="sub ${cls}">${pnlp}</div></div>
+      <div class="pc"><div class="lbl">Funding</div><div class="val ${f.cls}">${f.txt}</div><div class="sub">${f.sub}</div></div>
+      <div class="pc"><div class="lbl">Stop Loss</div><div class="val">${p.stop_loss>0?fmt(p.stop_loss,4):'—'}</div><div class="sub">${p.stop_loss>0?movePct(p.entry_px,p.stop_loss):''}</div></div>
+    </div>
+    <div class="pplan">
+      <span><span class="lbl">Closed</span>${esc(p.exit_reason||'')}</span>
+      <span class="muted">held ${fmtDur((p.closed_ms||0)-(p.opened_ms||0))}</span>
+      <span class="muted spacer">${fmtWhen(p.opened_ms)}</span>
+    </div>
+    ${newsRat(p)}
+  </div>`;
+}
+
+// ---- header: mode/halt controls, clock, feed-link health -----------------------
+// The mode pill IS the toggle (confirm guards the dry->live direction); the halt
+// state only surfaces when halted (red pill + the button flips to Resume).
+let curRt = null;
+function setRuntime(rt){
+  if(!rt) return;
+  curRt = rt;
+  const m = $('mode');
+  m.textContent = rt.dry_run ? 'DRY RUN' : 'LIVE';
+  m.className = 'modebtn ' + (rt.dry_run ? 'dry' : 'live');
+  m.title = rt.dry_run ? 'Paper trading — click to switch to LIVE'
+                       : 'Real orders — click to switch to DRY-RUN';
+  const hp = $('halt-pill');
+  hp.hidden = !rt.trading_halted;
+  if(rt.trading_halted) hp.textContent = 'HALTED' + (rt.halt_reason ? ' · ' + rt.halt_reason : '');
+  const hb = $('haltbtn');
+  hb.textContent = rt.trading_halted ? '▶ Resume' : '⏸ Halt';
+  hb.className = 'hbtn' + (rt.trading_halted ? ' resume' : '');
+}
+function toggleMode(){
+  if(curRt && curRt.dry_run && !confirm('Switch to LIVE trading? Real orders with real money.')) return;
+  ctrl('toggle_dry_run');
+}
+function toggleHalt(){ ctrl(curRt && curRt.trading_halted ? 'resume' : 'halt'); }
+
+// Clock: local time + UTC (funding pays and time-exits land on UTC boundaries).
+function tickClock(){
+  const d = new Date();
+  $('clock').textContent = d.toLocaleTimeString([], {hour12:false});
+  $('clock-utc').textContent = 'UTC ' + String(d.getUTCHours()).padStart(2,'0')
+                             + ':' + String(d.getUTCMinutes()).padStart(2,'0');
+}
+setInterval(tickClock, 1000); tickClock();
+
+// Feed-link dots: /api/health reports each ingestor's connection state.
+function setFeedDot(dot, st){
+  const el = $(dot); if(!el) return;
+  el.className = 'dot' + (!st || !st.enabled ? '' : st.connected ? ' ok' : ' bad');
+  const wrap = el.parentElement;
+  wrap.title = wrap.dataset.label + ': ' + (!st || !st.enabled ? 'not configured'
+    : st.connected ? 'connected' : 'down — reconnecting');
+}
+async function pollHealth(){
+  let h = null;
+  try{ const r = await fetch('/api/health'); if(r.ok) h = await r.json(); }catch(e){}
+  setFeedDot('tg-dot', h && h.telegram);
+  $('tree-stat').hidden = !(h && h.tree && h.tree.enabled);
+  setFeedDot('tree-dot', h && h.tree);
+}
+setInterval(pollHealth, 10000); pollHealth();
+
+const capState = { current: null };
+function setCapital(c){
+  if(c && c.current!=null) capState.current = c.current;
+  updateAcct();
+}
+
+// ---- account summary (top right): balance / available margin / ratio / uPnL ----
+function updateAcct(){
+  let upnl = 0, have = false, margin = 0;
+  positions.forEach(p => {
+    if(p.upnl!=null){ upnl += p.upnl; have = true; }
+    margin += p.leverage ? (p.notional_usd||0)/p.leverage : (p.notional_usd||0);
+  });
+  const bal = capState.current;
+  $('a-bal').textContent = bal!=null ? '$'+fmt(bal,2) : '—';
+  $('a-avail').textContent = bal!=null ? '$'+fmt(Math.max(0, bal-margin),2) : '—';
+  $('a-ratio').textContent = (bal>0) ? (margin/bal*100).toFixed(1)+'%' : '—';
+  const u = $('a-upnl');
+  u.textContent = have ? upnlStr(upnl) : '$0.00';
+  u.className = have ? (upnl>=0?'long':'short') : '';
+}
+
+async function ctrl(action){
+  const r = await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action})});
+  setRuntime(await r.json());
+}
+
+// Manual emergency close: confirm, then market-close via the control endpoint. On
+// success the trade.close event over the websocket removes the card; a failed LIVE
+// close keeps the position tracked (the bot retries), so just surface the error.
+async function closePos(id, sym, paper){
+  const what = paper ? 'paper position' : 'LIVE position with a real market order';
+  if(!confirm('Emergency-close '+sym+' now?\nThis closes the '+what+'.')) return;
+  try{
+    const r = await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'close_position', id})});
+    const j = await r.json();
+    if(!j.ok) alert('Close failed: '+(j.error||r.status));
+  }catch(e){ alert('Close failed: '+e); }
+}
+
+function renderPositions(){
+  const arr = [...positions.values()].sort((a,b)=>(b.opened_ms||0)-(a.opened_ms||0));
+  $('positions').innerHTML = arr.length
+    ? arr.map(p => posCard(p,false)).join('')
+    : '<div class="empty">No open positions.</div>';
+  $('open-h2').textContent = 'Open positions' + (positions.size?' ('+positions.size+')':'');
+  updateAcct();
+}
+
+// Repaint one open-position card's price-derived cells (shared by the 3s server
+// tick and the chart-frequency live-price fast path).
+function paintPos(p){
+  const id = p.id, cls = (p.upnl||0)>=0 ? 'pos' : 'neg';
+  const mk = $('mk-'+id); if(mk) mk.textContent = fmt(p.mark,4);
+  const up = $('up-'+id); if(up){ up.textContent = upnlStr(p.upnl||0); up.className = 'val '+cls; }
+  const upr = $('upr-'+id);
+  if(upr){ upr.textContent = p.notional_usd ? signpct((p.upnl||0)/p.notional_usd*100,2) : '';
+           upr.className = 'sub '+cls; }
+  const sz = $('sz-'+id); if(sz) sz.textContent = kusd(p.notional_usd + (p.upnl||0));
+}
+
+function addHistory(p){
+  $('history').insertAdjacentHTML('afterbegin', posCard(p,true));
+}
+
+function pruneFeed(){
+  const f = $('feed');
+  while(f.children.length > 300){
+    const last = f.lastChild;
+    const nid = last.dataset ? last.dataset.newsId : null;
+    if(nid) feedRows.delete(nid);   // keep the join-map bounded with the DOM
+    f.removeChild(last);
+  }
+}
+
+function feed(cls, html){
+  const el = document.createElement('div');
+  el.className = 'row ' + cls;
+  el.innerHTML = html;
+  const f = $('feed'); f.insertBefore(el, f.firstChild);
+  pruneFeed();
+}
+
+// A news item, its analysis, and the enter/reject decision arrive as SEPARATE
+// websocket events but belong in ONE feed row. We key the row by news id: the first
+// event that mentions an id creates the row; later ones enrich it in place. A live
+// news.raw row starts `pending` (pulsing "analyzing…") until its analysis, decision,
+// or skip reason lands; snapshot-backfilled history never shows the indicator.
+function feedClass(e){
+  if(e.decision) return e.decision.action==='enter' ? 'enter' : 'rejected';
+  if(e.skipped) return 'skip';
+  return (!e.analysis || e.analysis.direction==='none' || e.analysis.is_stale) ? 'skip' : 'news';
+}
+function renderNewsRow(e){
+  e.el.className = 'row ' + feedClass(e);
+  e.el.innerHTML = newsFeedHtml(e);
+  fillNewsTicks(e.el);
+}
+function feedEntry(news_id, news){
+  let e = feedRows.get(news_id);
+  if(!e){
+    const el = document.createElement('div');
+    el.className = 'row news';
+    el.dataset.newsId = news_id;
+    const f = $('feed'); f.insertBefore(el, f.firstChild);
+    e = {el, news: news || {id:news_id, title:'', body:'', source:'', link:'', time_ms:Date.now()},
+         analysis:null, decision:null, skipped:null, pending:false};
+    feedRows.set(news_id, e);
+    pruneFeed();
+  } else if(news){ e.news = news; }
+  return e;
+}
+function feedNews(news){
+  const e = feedEntry(news.id, news);
+  if(!e.analysis && !e.decision && !e.skipped) e.pending = true;
+  renderNewsRow(e);
+}
+function feedAnalysis(a){ const e = feedEntry(a.news_id); e.analysis = a; e.pending = false; renderNewsRow(e); }
+function feedDecision(d){ const e = feedEntry(d.news_id); e.decision = d; e.pending = false; renderNewsRow(e); }
+function feedSkipped(news, reason){
+  const e = news && news.id && feedRows.get(news.id);
+  if(!e){   // skip for an item whose news.raw row is gone (e.g. pruned) — standalone row
+    feed('skip', `<div class="meta"><span>${ts()}</span><span>skipped: ${esc(reason)}</span></div>
+      <div class="body">${esc((news&&news.title)||'')}</div>`);
+    return;
+  }
+  e.skipped = reason || 'skipped'; e.pending = false; renderNewsRow(e);
+}
+
+// Latency + cost of the Claude call(s) behind an analysis, rendered inline on the
+// analysis line. Old persisted analyses predate these fields — render nothing then.
+function ametaHtml(a){
+  const parts = [];
+  if(a.latency_ms) parts.push('⏱ ' + a.latency_ms.toLocaleString() + 'ms');
+  if(a.cost_usd) parts.push('$' + (+a.cost_usd).toFixed(4));
+  return parts.length ? ` <span class="ameta">${parts.join(' · ')}</span>` : '';
+}
+// The bot's verdict for a news item: the analysis (ticker/direction/confidence) and the
+// decision (enter/reject). Stacked under the news in the same row; a,d may be undefined.
+// A reject carries no symbol — the row's faint red tint is the marker; only the reason
+// text renders (an enter keeps its explicit green ✅ line).
+function verdictHtml(a, d){
+  let out = '';
+  if(a){
+    const dir = a.direction || 'none';
+    const tick = a.ticker
+      ? `<b class="tlink" data-sym="${esc(a.ticker)}" data-symclass="${esc(a.asset_class||'')}"
+           title="Show on chart">${esc(a.ticker)}</b>` : '<b>—</b>';
+    out += `<div class="analysis">🤖 ${tick} · <span class="${dir}">${esc(dir)}</span>`
+         + ` · conf ${Math.round((a.confidence||0)*100)}%${a.is_stale?' · stale':''}`
+         + `${a.rationale?` — ${esc(a.rationale)}`:''}${ametaHtml(a)}</div>`;
+  }
+  if(d && d.action==='enter'){
+    const sym = (d.market&&d.market.symbol) || (a&&a.ticker) || '';
+    const coin = (d.market&&d.market.name) || '';
+    out += `<div class="verdict good">✅ ENTER <b class="tlink" data-coin="${esc(coin)}"`
+         + ` data-sym="${esc(sym)}" title="Show on chart">${esc(sym)}</b> `
+         + `<span class="${d.side}">${esc(d.side||'')}</span> $${fmt(d.notional_usd,0)} @ ${fmt(d.entry_px,4)}</div>`;
+  } else if(d && d.action==='reject'){
+    out += `<div class="verdict"><span class="rsn">${esc(d.reason||'')}</span></div>`;
+  }
+  return out;
+}
+
+function newsFeedHtml(e){
+  const p = e.news, a = e.analysis, url = safeUrl(p.link);
+  let tail = verdictHtml(a, e.decision);
+  if(!a && e.skipped)
+    tail = `<div class="analysis"><span class="muted">skipped — ${esc(e.skipped)}</span></div>` + tail;
+  else if(!a && !e.decision && e.pending)
+    tail = `<div class="analysis pending">🤖 analyzing…</div>` + tail;
+  return `<div class="meta"><span>${ts(p.time_ms)}</span><span>📰 ${esc(p.source||'Twitter')}</span></div>
+    <div class="body"><b>${esc(p.title||'')}</b> ${esc((p.body||'').slice(0,220))} ${url?`<a href="${url}" target="_blank" rel="noopener">↗</a>`:''}</div>${ticksHtml(p,a)}${tail}`;
+}
+
+// ---- per-news ticker boxes ---------------------------------------------------
+// Every tradable ticker the news touches — the analyzer's related_tickers (incl. the
+// primary it would trade) unioned with the feed's auto-detected crypto hints — gets a
+// box: price when the news hit -> live price, % change since. Clicking one snaps the
+// chart to that market at the news moment (dot on the candle + reference line).
+function marketBySym(sym, klass){
+  sym = (sym||'').replace(/^\$/,'').trim().toUpperCase();
+  if(!sym) return null;
+  let c = markets.filter(m => m.symbol === sym);
+  if(c.length > 1 && klass){
+    const want = klass==='crypto' ? (m=>m.dex==='')
+               : (klass==='equity'||klass==='index'||klass==='commodity') ? (m=>m.dex!=='') : null;
+    if(want){ const f = c.filter(want); if(f.length) c = f; }
+  }
+  return c[0] || null;
+}
+function rowTickers(p, a){
+  const out = [], seen = new Set();
+  const add = (sym, klass) => { const m = marketBySym(sym, klass);
+    if(m && !seen.has(m.name)){ seen.add(m.name); out.push(m); } };
+  if(a){
+    add(a.ticker, a.asset_class);
+    (a.related_tickers||[]).forEach(r => r && add(r.ticker, r.asset_class));
+  }
+  add(p.coin_hint, 'crypto');
+  (p.symbol_hints||[]).forEach(s => add(s, 'crypto'));
+  // Explicit $CASHTAG mentions render a box immediately, before the analysis lands
+  // (bare-word symbol scans false-positive too much — Sonnet covers those).
+  for(const c of ((p.title||'')+' '+(p.body||'')).matchAll(/\$([A-Za-z]{2,10})(?![A-Za-z0-9])/g))
+    add(c[1], '');
+  return out.slice(0, 6);
+}
+function ticksHtml(p, a){
+  const t = p.time_ms || 0;
+  const list = t ? rowTickers(p, a) : [];
+  if(!list.length) return '';
+  return '<div class="nticks">' + list.map(m =>
+    `<button class="ntick ${m.dex?'xyz':'cry'}" data-newscoin="${esc(m.name)}" data-newst="${t}"
+       title="Show ${esc(m.symbol)} on chart at news time">
+      <span class="ntop"><b>${esc(m.symbol)}</b><span class="nt-tag">${m.dex?esc(m.dex.toUpperCase()):'HL'}</span>
+        <span class="nt-pct">—</span></span>
+      <span class="nbot"><span class="nt-then">—</span><span class="nt-now">—</span></span>
+    </button>`).join('') + '</div>';
+}
+// Price of `coin` when the news broke: the open of the candle containing the timestamp.
+// 1m first, falling back to coarser intervals for news older than HL's 1m retention.
+const newsPxCache = {};   // coin|minute-bucket -> promise<number|null>
+function newsPxAt(coin, ms){
+  if(!coin || !ms) return Promise.resolve(null);
+  const key = coin + '|' + Math.floor(ms/60000);
+  if(newsPxCache[key]) return newsPxCache[key];
+  newsPxCache[key] = (async () => {
+    for(const [iv, sec] of [['1m',60],['1h',3600],['1d',86400]]){
+      try{
+        const r = await fetch(`/api/candles?coin=${encodeURIComponent(coin)}&interval=${iv}`
+                              + `&start=${ms - 2*sec*1000}&end=${ms + sec*1000}`);
+        if(!r.ok) continue;
+        const d = await r.json();
+        if(Array.isArray(d) && d.length){
+          let best = d[0];
+          for(const c of d) if(+c.t <= ms) best = c;   // candle containing the news moment
+          const px = +best.o || +best.c;
+          if(px) return px;
+        }
+      }catch(e){}
+    }
+    return null;
+  })();
+  return newsPxCache[key];
+}
+function curPxOf(coin){
+  if(livePx[coin]!=null) return livePx[coin];
+  const m = findMarket(coin);
+  return (m && m.px) ? m.px : null;
+}
+function paintNTick(el){
+  const npx = +el.dataset.newspx || 0;
+  const cur = curPxOf(el.dataset.newscoin);
+  el.querySelector('.nt-then').textContent = npx ? fmtPx(npx) : '—';
+  el.querySelector('.nt-now').textContent = cur!=null ? fmtPx(cur) : '—';
+  const pc = el.querySelector('.nt-pct');
+  if(npx && cur!=null){
+    const d = (cur-npx)/npx*100;
+    pc.textContent = signpct(d,2);
+    pc.className = 'nt-pct ' + (d>=0?'up':'dn');
+  } else { pc.textContent = '—'; pc.className = 'nt-pct'; }
+}
+async function fillNewsTicks(root){
+  for(const el of root.querySelectorAll('.ntick')){
+    paintNTick(el);
+    if(!el.dataset.newspx){
+      const px = await newsPxAt(el.dataset.newscoin, +el.dataset.newst || 0);
+      if(!el.isConnected) continue;        // row re-rendered while we fetched
+      if(px) el.dataset.newspx = px;
+      paintNTick(el);
+    }
+  }
+}
+// Keep "now" prices and % fresh (live stream for charted/held coins; 30s market
+// poll covers the rest), and the news reference line's % label with them.
+setInterval(() => {
+  document.querySelectorAll('#feed .ntick').forEach(paintNTick);
+  updateNewsLine();
+}, 3000);
+
+function onEvent(ev){
+  const p = ev.payload || {};
+  switch(ev.topic){
+    case 'snapshot': {
+      positions.clear(); $('history').innerHTML = ''; $('feed').innerHTML = ''; closedTrades = []; feedRows.clear();  // idempotent rebuild
+      const all = p.positions || [];
+      all.filter(x => x.status==='open').forEach(pos => positions.set(pos.id, pos));
+      all.filter(x => x.status!=='open').sort((a,b)=>(a.closed_ms||0)-(b.closed_ms||0))
+         .forEach(pos => { addHistory(pos); closedTrades.push(pos); });
+      renderPositions();
+      setCapital(p.capital);
+      setRuntime(p.runtime);   // sets mode + recomputes realized from closedTrades just loaded
+      // Backfill the live feed with persisted news seen while the UI was closed (the bus
+      // only streams live events; history comes from the DB snapshot). Each row carries the
+      // bot's verdict — analysis confidence + enter/reject — joined by news_id. Oldest first
+      // so feed()'s prepend leaves the newest on top.
+      const aByNews = {}, dByNews = {};   // newest-first arrays -> keep first (latest) per news
+      (p.analyses || []).forEach(a => { if(!(a.news_id in aByNews)) aByNews[a.news_id] = a; });
+      (p.decisions || []).forEach(d => { if(!(d.news_id in dByNews)) dByNews[d.news_id] = d; });
+      (p.news || []).slice().reverse().forEach(n => {
+        const e = feedEntry(n.id, n);          // keyed so live analysis/decision can enrich it
+        e.analysis = aByNews[n.id] || null;
+        e.decision = dByNews[n.id] || null;
+        renderNewsRow(e);
+      });
+      chartBoot(p);   // first snapshot starts the chart; later ones refresh trade markers
+      break;
+    }
+    case 'news.raw':
+      feedNews(p);
+      break;
+    case 'news.skipped':
+      feedSkipped(p.news, p.reason);   // joins the item's existing row (clears "analyzing…")
+      break;
+    case 'analysis':
+      feedAnalysis(p);
+      break;
+    case 'decision':
+      feedDecision(p);
+      break;
+    case 'positions.tick':
+      (p.ticks||[]).forEach(t => {
+        const pos = positions.get(t.id); if(!pos) return;
+        pos.mark=t.mark; pos.upnl=t.upnl; pos.roe=t.roe; pos.eff_stop=t.eff_stop; pos.peak_px=t.peak_px;
+        if(t.funding!=null) pos.funding_usd = t.funding;
+        livePx[pos.market] = t.mark;       // keep the live fast path's price fresh too
+        paintPos(pos);
+        const stop = effStopPx(pos), trailing = pos.trail_pct>0 && Math.abs(stop-pos.stop_loss)>1e-9;
+        const st=$('st-'+t.id), stc=$('stc-'+t.id), ex=$('ex-'+t.id),
+              fd=$('fd-'+t.id), fds=$('fds-'+t.id);
+        if(st) st.textContent = stop>0 ? fmt(stop,4) : '—';
+        if(stc) stc.textContent = trailing ? 'trailing' : (stop>0 ? movePct(pos.entry_px,stop) : '');
+        if(fd){ const f = fundParts(pos.funding_usd);
+                fd.textContent = f.txt; fd.className = 'val '+f.cls;
+                if(fds) fds.textContent = f.sub; }
+        if(ex) ex.textContent = 'in '+fmtDur(pos.time_exit_ms-Date.now());
+      });
+      updateAcct();
+      updatePosLines();   // live PnL on the entry line + trailing stop level
+      break;
+    case 'trade.open':
+      positions.set(p.id,p); renderPositions();
+      feed('trade', `<div class="meta"><span>${ts()}</span><span>${p.dry_run?'🧪':'🔴'} OPEN</span></div>
+        <div class="body"><b class="tlink" data-coin="${esc(p.market)}" data-focus="${p.opened_ms||''}">${esc(p.symbol)}</b> <span class="${p.side}">${p.side}</span> ${fmt(p.size,4)} @ ${fmt(p.entry_px,4)}</div>`);
+      onTradeMark(p);   // drop the entry arrow + entry/stop lines on the chart
+      break;
+    case 'trade.close':
+      positions.delete(p.id); renderPositions(); addHistory(p); closedTrades.push(p);
+      feed('trade', `<div class="meta"><span>${ts()}</span><span>${p.dry_run?'🧪':'🔴'} CLOSE</span></div>
+        <div class="body"><b class="tlink" data-coin="${esc(p.market)}" data-focus="${p.opened_ms||''}">${esc(p.symbol)}</b> pnl <span class="${p.pnl_usd>=0?'long':'short'}">$${fmt(p.pnl_usd,2)}</span> · ${esc(p.exit_reason)}</div>`);
+      onTradeMark(p);   // ...and the exit arrow (entry/stop lines come down too)
+      break;
+    case 'capital':
+      setCapital(p); break;
+    case 'trade.error':
+      feed('reject', `<div class="body">⚠️ ${esc(p.market)}: ${esc(p.error)}</div>`); break;
+    case 'status':
+      feed('news', `<div class="body">ℹ️ ${esc(p)}</div>`);
+      fetch('/api/snapshot').then(r=>r.json()).then(s=>setRuntime(s.runtime));
+      break;
+  }
+}
+
+// Quotes escaped too: esc'd values are interpolated into HTML attributes, and news content
+// comes from external feeds (anyone who can post to an ingested channel controls it).
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// Feed-supplied links are only rendered as http(s) — never javascript:/data: etc.
+function safeUrl(u){ return /^https?:\/\//i.test(u||'') ? esc(u) : ''; }
+
+// ============================ chart ==========================================
+// TradingView Lightweight Charts (vendored, Apache-2.0) over Hyperliquid data for
+// the exact perp pairs the bot trades: history via the backend proxy
+// (/api/candles + /api/markets), the live tail + asset context streamed straight
+// from Hyperliquid's public websocket. Every trade the bot opens/closes drops a
+// green/red arrow on the candle it happened on (one fill = one arrow).
+const IVALS = ['1m','5m','15m','1h','4h','1d','1w'];
+const IVAL_LABEL = {'1d':'D','1w':'W'};
+const IVAL_SEC = {'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400,'1w':604800};
+const UP='#2ebd85', DOWN='#f6465d', UPV='#2ebd8555', DOWNV='#f6465d55';
+let chart=null, cSeries=null, vSeries=null, chartReady=false;
+let bars=[], barsKey='';                 // loaded candles (asc, time in sec) + their coin|ival
+let curCoin=null, curSym='', curDex='', curIval=null;
+let lastPx=null;
+const tb = { prevDay:0, oracle:0, vol:0, oiUsd:0, funding:0, has:false };   // top-bar context
+let markets=[], marketsAt=0, marketsReq=null;
+let hlWsUrl=null, hlWs=null, hlWsUp=false, hlSubbed=[];
+let mkFilter='all';
+const coinMetaCache = {};                // coin name -> {at, mc, fdv, img}
+let candleReq = 0, candleTries = 0;
+let histReq=null, histDone=false;        // progressive history (scroll-back) state
+let pendingFocus=null, focusSpanSec=0;   // snap-to-time request (ms) + view width (sec) to keep
+let focusAutoIval=false;                 // snap may escalate to a coarser ival to reach old times
+const posLines = new Map();              // open-position id -> {entry, stop} price lines
+const livePx = {};                       // coin -> latest streamed price (position fast path)
+
+function ivalSec(){ return IVAL_SEC[curIval] || 300; }
+function findMarket(name){ return markets.find(m => m.name === name); }
+function dotColor(s){ let h=0; for(const c of s||'') h=(h*31+c.charCodeAt(0))%360;
+  return `hsl(${h},55%,42%)`; }
+function fmtUsd(n){ if(n==null||!isFinite(n)||n===0) return '—'; const a=Math.abs(n);
+  if(a>=1e12) return '$'+(n/1e12).toFixed(2)+'t';
+  if(a>=1e9)  return '$'+(n/1e9).toFixed(2)+'b';
+  if(a>=1e6)  return '$'+(n/1e6).toFixed(2)+'m';
+  if(a>=1e3)  return '$'+(n/1e3).toFixed(1)+'k';
+  return '$'+n.toFixed(2); }
+function fmtPx(p){ if(p==null||!isFinite(p)) return '—'; const a=Math.abs(p);
+  const d = a>=10000?1 : a>=1000?2 : a>=100?2 : a>=10?3 : a>=1?4 : a>=0.1?5 : a>=0.01?6 : 7;
+  return p.toLocaleString(undefined,{minimumFractionDigits:Math.min(d,2),maximumFractionDigits:d}); }
+function pxFormat(px){ const a=Math.abs(px||1);
+  const prec = a>=10000?1 : a>=1000?2 : a>=100?2 : a>=10?3 : a>=1?4 : a>=0.1?5 : a>=0.01?6 : 7;
+  return {type:'price', precision:prec, minMove:Number((10**-prec).toFixed(prec))}; }
+function pairLabel(m){ return m.symbol + (m.dex ? '-USD' : '-USDC'); }
+
+// ---- asset icons --------------------------------------------------------------
+// Try Hyperliquid's own coin art first, then a community icon CDN (crypto) or a
+// ticker-logo CDN (xyz equities), then the CoinGecko image that /api/coinmeta
+// returns; a colored-initial dot is the final fallback (icoErr walks the chain).
+function iconSrcs(m){
+  const nm = m.name || m.symbol;
+  // kPEPE-style 1000x perps: icon belongs to the underlying token
+  const base = (nm.length > 2 && nm[0] === 'k' && /^[A-Z0-9]+$/.test(nm.slice(1)))
+    ? nm.slice(1) : m.symbol;
+  if(!m.dex) return ['https://app.hyperliquid.xyz/coins/'+encodeURIComponent(nm)+'.svg',
+                     'https://assets.coincap.io/assets/icons/'+base.toLowerCase()+'@2x.png'];
+  return ['https://assets.parqet.com/logos/symbol/'+encodeURIComponent(m.symbol)+'?format=png&size=64'];
+}
+function iconHtml(m, sm){
+  const srcs = iconSrcs(m);
+  return `<img class="cicon${sm?' sm':''}" src="${esc(srcs[0])}" data-alt="${esc(srcs.slice(1).join('|'))}"`
+       + ` data-fsym="${esc(m.symbol)}" loading="lazy" alt="" onerror="icoErr(this)">`;
+}
+function icoErr(el){
+  const alts = (el.dataset.alt||'').split('|').filter(Boolean);
+  if(alts.length){ el.dataset.alt = alts.slice(1).join('|'); el.src = alts[0]; return; }
+  const span = document.createElement('span');
+  span.className = el.className.replace('cicon','cdot');
+  span.style.background = dotColor(el.dataset.fsym);
+  span.textContent = (el.dataset.fsym||'·')[0];
+  el.replaceWith(span);
+}
+
+function chartInit(){
+  if(chartReady) return;
+  const el = $('chart');
+  if(!window.LightweightCharts){
+    $('c-msg').textContent = 'chart library failed to load (static/lightweight-charts.js)';
+    return;
+  }
+  const LWC = window.LightweightCharts;
+  chart = LWC.createChart(el, {
+    width: el.clientWidth, height: el.clientHeight,
+    layout: { background:{type:'solid', color:'transparent'}, textColor:'#8b96aa', fontSize:11,
+              fontFamily:'Inter,-apple-system,Segoe UI,Roboto,sans-serif' },
+    grid: { vertLines:{color:'#151b28'}, horzLines:{color:'#151b28'} },
+    crosshair: { mode: LWC.CrosshairMode.Normal },
+    rightPriceScale: { borderColor:'#1d2535' },
+    timeScale: { borderColor:'#1d2535', timeVisible:true, secondsVisible:false, rightOffset:4 },
+  });
+  cSeries = chart.addCandlestickSeries({ upColor:UP, downColor:DOWN, wickUpColor:UP,
+    wickDownColor:DOWN, borderVisible:false });
+  cSeries.priceScale().applyOptions({ scaleMargins:{ top:0.08, bottom:0.24 } });
+  if(cSeries.attachPrimitive) cSeries.attachPrimitive(marksPrim);   // custom B/S + news-dot painter
+  vSeries = chart.addHistogramSeries({ priceScaleId:'vol', priceFormat:{type:'volume'},
+    lastValueVisible:false, priceLineVisible:false });
+  chart.priceScale('vol').applyOptions({ scaleMargins:{ top:0.82, bottom:0 } });
+  new ResizeObserver(() =>
+    chart.applyOptions({width: el.clientWidth, height: el.clientHeight})).observe(el);
+  // scrolling near the left edge progressively loads older history
+  chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if(r && r.from < 15) loadOlder(); });
+  chartReady = true;
+}
+
+// Boot/refresh from a dashboard snapshot: connect the HL stream, pick the initial
+// market (last viewed -> most recent trade -> top volume), or just refresh markers.
+function chartBoot(p){
+  if(p && p.chart && p.chart.hl_ws && p.chart.hl_ws !== hlWsUrl){
+    hlWsUrl = p.chart.hl_ws; hlWsConnect();
+  }
+  chartInit();
+  loadMarkets().then(() => {
+    feedRows.forEach(renderNewsRow);   // ticker boxes need the markets list to resolve
+    if(curCoin){ buildMarkers(); buildPosLines(); hlResub(); return; }   // re-snapshot refresh
+    let saved = null;
+    try{ saved = JSON.parse(localStorage.getItem('hlbot_chart')||'null'); }catch(e){}
+    let m = saved && findMarket(saved.coin);
+    if(!m){
+      const last = [...positions.values()].concat(closedTrades)
+        .sort((a,b)=>(b.opened_ms||0)-(a.opened_ms||0))[0];
+      m = last && findMarket(last.market);
+    }
+    if(!m) m = markets.find(x => x.symbol==='BTC' && x.dex==='') || markets[0];
+    selectMarket(m || {name:'BTC', symbol:'BTC', dex:'', asset_class:'crypto'},
+                 saved && saved.ival);
+  });
+}
+
+function persistChart(){
+  try{ localStorage.setItem('hlbot_chart', JSON.stringify({coin:curCoin, ival:curIval})); }catch(e){}
+}
+
+function selectMarket(m, ival){
+  curCoin = m.name; curSym = m.symbol; curDex = m.dex || '';
+  if(ival && IVALS.includes(ival)) curIval = ival;
+  if(!curIval) curIval = '5m';
+  persistChart();
+  $('c-pair').textContent = pairLabel(m);
+  $('c-ico').innerHTML = iconHtml(m, false);
+  const db = $('c-dexb');
+  if(curDex){ db.textContent = curDex.toUpperCase(); db.style.display=''; } else db.style.display='none';
+  renderIvals();
+  lastPx = null; tb.prevDay = tb.oracle = tb.vol = tb.oiUsd = tb.funding = 0; tb.has = false;
+  const row = findMarket(curCoin);
+  if(row) tbFromMarket(row); else tbRender();
+  loadCoinMeta();
+  loadCandles();
+  hlResub();
+}
+
+function visSpanSec(){   // current viewport width in TIME (sec); 0 when unknown
+  try{ const r = chart && chart.timeScale().getVisibleLogicalRange();
+       return r ? Math.max(20, r.to - r.from) * ivalSec() : 0; }catch(e){ return 0; }
+}
+function viewCenterMs(){ // time (ms) at the middle of the viewport; 0 when unknown
+  try{
+    const r = chart.timeScale().getVisibleLogicalRange();
+    if(!r || !bars.length) return 0;
+    const idx = Math.max(0, Math.min(bars.length-1, Math.round((r.from+r.to)/2)));
+    return bars[idx].time*1000;
+  }catch(e){ return 0; }
+}
+function atLiveEdge(){
+  try{ const r = chart.timeScale().getVisibleLogicalRange();
+       return !r || r.to >= bars.length - 2; }catch(e){ return true; }
+}
+function chartTo(name, focusMs){
+  if(!name) return;
+  closeMk();
+  pendingFocus = focusMs || null;
+  focusAutoIval = !!focusMs;      // intent is "show me this moment" — any ival that has it
+  focusSpanSec = visSpanSec();    // keep the user's current zoom when snapping to a trade
+  if(name === curCoin){ applyFocus(); return; }
+  const m = findMarket(name) || { name, symbol: name.split(':').pop().toUpperCase(),
+    dex: name.includes(':') ? name.split(':')[0] : '',
+    asset_class: name.includes(':') ? 'equity' : 'crypto' };
+  selectMarket(m);
+}
+// Resolve a bare ticker (news analysis) to a market; the analyzer's asset class
+// disambiguates symbol collisions, then highest volume wins (markets are sorted).
+function chartToSym(sym, klass){
+  const m = marketBySym(sym, klass);
+  if(m) chartTo(m.name);
+}
+
+// A news ticker box snaps the chart to that market AT the news moment: yellow dot
+// on the candle the news landed in + a reference line at the news price whose label
+// tracks the % move since (the box's own numbers). Works across timeframe switches —
+// the dot/line re-derive from newsMark on every candle (re)load.
+let newsMark = null;     // {coin, ms, px} — at most one news focus at a time
+async function chartToNews(coin, ms, px){
+  if(!coin || !ms) return;
+  if(!px) px = await newsPxAt(coin, ms) || 0;
+  newsMark = {coin, ms, px};
+  chartTo(coin, ms);
+  if(coin === curCoin){ buildMarkers(); buildNewsLine(); }   // same pair: no reload runs
+}
+
+// Clicking any ticker — position cards, trade feed lines, news verdicts, modal
+// rows — retargets the chart instead of opening the Hyperliquid app in a new tab.
+document.addEventListener('click', e => {
+  const nt = e.target.closest('.ntick');
+  if(nt){ chartToNews(nt.dataset.newscoin, +nt.dataset.newst || 0, +nt.dataset.newspx || 0); return; }
+  const t = e.target.closest('[data-coin],[data-sym]');
+  if(!t) return;
+  if(t.tagName === 'A') e.preventDefault();
+  if(t.dataset.coin) chartTo(t.dataset.coin, +t.dataset.focus || 0);
+  else if(t.dataset.sym) chartToSym(t.dataset.sym, t.dataset.symclass||'');
+});
+
+// ---- markets list (modal + top-bar fallback) -------------------------------
+async function loadMarkets(force){
+  if(!force && Date.now()-marketsAt < 10000) return markets;
+  if(marketsReq) return marketsReq;
+  marketsReq = (async () => {
+    try{
+      const r = await fetch('/api/markets');
+      if(r.ok){
+        const d = await r.json();
+        if(d && Array.isArray(d.markets) && d.markets.length){
+          markets = d.markets; marketsAt = Date.now();
+          const m = findMarket(curCoin); if(m) tbFromMarket(m);
+          if(!$('mkov').hidden) renderMk();
+        }
+      }
+    }catch(e){}
+    finally{ marketsReq = null; }
+    return markets;
+  })();
+  return marketsReq;
+}
+function tbFromMarket(m){
+  tb.prevDay=m.prev_day_px; tb.oracle=m.oracle_px; tb.vol=m.day_ntl_vlm;
+  tb.oiUsd=m.open_interest_usd; tb.funding=m.funding; tb.has=true;
+  if(lastPx==null && m.px) lastPx = m.px;
+  tbRender();
+}
+function tbRender(){
+  const chg = (tb.prevDay>0 && lastPx) ? (lastPx-tb.prevDay)/tb.prevDay*100 : null;
+  const cls = chg==null ? '' : (chg>=0?'long':'short');
+  const last=$('c-last'); last.textContent = lastPx!=null ? fmtPx(lastPx) : '—'; last.className=cls;
+  const c=$('c-chg'); c.textContent = chg==null ? '—' : signpct(chg,2); c.className=cls;
+  $('c-index').textContent = tb.oracle ? fmtPx(tb.oracle) : '—';
+  $('c-vol').textContent = fmtUsd(tb.vol);
+  $('c-oi').textContent = fmtUsd(tb.oiUsd);
+  const f=$('c-fund');
+  f.textContent = tb.has ? (tb.funding*100).toFixed(4)+'%' : '—';
+  f.className = (tb.has && tb.funding<0) ? 'short' : (tb.has ? 'long' : '');
+}
+function setLast(px){ if(px!=null && isFinite(px)){ lastPx = px; tbRender(); } }
+
+// ---- candles ----------------------------------------------------------------
+function mapBar(c){ return {time:Math.floor(c.t/1000), open:+c.o, high:+c.h, low:+c.l,
+                            close:+c.c, vol:+c.v}; }
+function setSeriesData(){
+  cSeries.setData(bars.map(b => ({time:b.time, open:b.open, high:b.high, low:b.low, close:b.close})));
+  vSeries.setData(bars.map(b => ({time:b.time, value:b.vol, color:b.close>=b.open?UPV:DOWNV})));
+}
+async function loadCandles(){
+  const reqId = ++candleReq, coin = curCoin, ival = curIval;
+  const msg = $('c-msg'); msg.style.display=''; msg.textContent = 'loading '+coin+' …';
+  let data = [];
+  try{
+    // A pending snap pulls history back to its target in THIS request (HL returns the
+    // newest ≤5000 bars of the window, so anything within retention arrives in one shot
+    // instead of a slow serial walk-back).
+    let url = `/api/candles?coin=${encodeURIComponent(coin)}&interval=${ival}`;
+    if(pendingFocus){
+      const iv = IVAL_SEC[ival] || 300;
+      url += '&start=' + Math.min(pendingFocus - 250*iv*1000, Date.now() - 500*iv*1000);
+    }
+    const r = await fetch(url);
+    if(r.ok) data = await r.json();
+  }catch(e){}
+  if(reqId !== candleReq) return;          // switched away mid-flight
+  if(!Array.isArray(data)) data = [];
+  bars = data.map(mapBar).sort((a,b)=>a.time-b.time);
+  barsKey = coin+'|'+ival;
+  histReq = null; histDone = false;        // fresh pair/interval: scroll-back starts over
+  if(!chartReady){ msg.textContent='chart library failed to load'; return; }
+  cSeries.applyOptions({priceFormat: pxFormat(bars.length ? bars[bars.length-1].close : 1)});
+  // A manual drag on the price axis disables autoscale permanently; re-arm it on
+  // every (re)load so switching pairs always lands on a sane Y range.
+  cSeries.priceScale().applyOptions({autoScale: true});
+  setSeriesData();
+  if(bars.length){
+    candleTries = 0;
+    setLast(bars[bars.length-1].close);
+    if(!pendingFocus)   // a pending snap-to-trade sets its own range; don't yank to live first
+      chart.timeScale().setVisibleLogicalRange({from: Math.max(0, bars.length-140), to: bars.length+6});
+    msg.style.display='none';
+  } else {
+    msg.textContent = 'no candle data for '+coin;
+    // a transient fetch hiccup on switch would otherwise leave the pane blank forever
+    if(candleTries++ < 3)
+      setTimeout(() => { if(barsKey === coin+'|'+ival && !bars.length) loadCandles(); }, 2500);
+  }
+  buildMarkers();
+  buildPosLines();
+  buildNewsLine();
+  applyFocus();
+}
+
+// Progressive history: nearing the left edge pulls older candles (like a real dex)
+// until Hyperliquid's per-interval retention (~5000 bars) runs out. Concurrent
+// callers (scroll handler + ensureHistory) share one in-flight request — returning
+// early instead would make ensureHistory see "no progress" and abandon a snap.
+// `startMs` overrides the default 500-bar page for bulk fills (snap to an old time).
+async function loadOlder(startMs){
+  if(histDone || !chartReady || !bars.length) return;
+  if(histReq) return histReq;
+  const key = barsKey;
+  const req = (async () => {
+    try{
+      const endMs = bars[0].time*1000 - 1;
+      const start = Math.min(startMs || endMs - ivalSec()*1000*500, endMs - ivalSec()*1000);
+      const r = await fetch(`/api/candles?coin=${encodeURIComponent(curCoin)}&interval=${curIval}`
+                            + `&start=${start}&end=${endMs}`);
+      if(!r.ok) return;
+      let d = await r.json();
+      if(barsKey !== key) return;            // switched away while fetching
+      if(!Array.isArray(d)) d = [];
+      const older = d.map(mapBar).filter(b => b.time < bars[0].time).sort((a,b)=>a.time-b.time);
+      if(!older.length){ histDone = true; return; }
+      // Pin the viewport by TIME across the prepend — index-based anchoring would
+      // teleport the view by however many bars were just inserted.
+      const vr = chart.timeScale().getVisibleRange();
+      bars = older.concat(bars);
+      setSeriesData();
+      if(vr) try{ chart.timeScale().setVisibleRange(vr); }catch(e){}
+      buildMarkers();                        // older trades may now be on-screen
+    }catch(e){}
+  })();
+  histReq = req;
+  req.finally(() => { if(histReq === req) histReq = null; });   // don't null a NEWER request
+  return req;
+}
+// Pull history back to `toMs` in one go (a snap to an old trade must land on the
+// first click): each round requests the WHOLE remaining span — HL serves the newest
+// ≤5000 bars of it, so any reachable target needs 1-2 rounds, then retention ends.
+async function ensureHistory(toMs, padMs){
+  const pad = Math.max(padMs || 0, 50*ivalSec()*1000);  // target shouldn't sit on the left edge
+  let rounds = 8;
+  while(rounds-- > 0 && bars.length && bars[0].time*1000 > toMs && !histDone){
+    const before = bars[0].time;
+    await loadOlder(toMs - pad);
+    if(!bars.length || bars[0].time >= before) break;   // no progress (error / end of data)
+  }
+}
+// Snap the viewport to a trade's open time (ticker click from a trades section),
+// loading enough history to reach it and keeping the user's zoom level. The range
+// is set by TIME, not bar index, so it stays anchored even if older candles are
+// prepended underneath it a moment later.
+//
+// HL only retains ~5000 bars per interval (1m ≈ 3.5 days, 5m ≈ 17d, 15m ≈ 52d), so
+// the target may simply not exist on the current timeframe. For a trade/news click
+// (focusAutoIval) we escalate to the smallest interval whose retention reaches it;
+// for a manual timeframe switch we respect the choice: oldest available + a note.
+function cNote(txt){
+  const m = $('c-msg'); m.textContent = txt; m.style.display = '';
+  clearTimeout(cNote._t); cNote._t = setTimeout(() => { m.style.display = 'none'; }, 4000);
+}
+let focusNote = '';   // shown once the snap lands (a reload would overwrite it sooner)
+function ivalReaches(iv, ms){ return ms > Date.now() - IVAL_SEC[iv]*4500*1000; }
+async function applyFocus(){
+  const f = pendingFocus;
+  if(!f || !chartReady || !bars.length) return;
+  const key = barsKey;
+  const iv0 = ivalSec();
+  const span0 = Math.min(Math.max(focusSpanSec || 140*iv0, 40*iv0), 400*iv0);
+  await ensureHistory(f, span0*0.6*1000);   // pad ≥ the view's left half so f centers
+  if(barsKey !== key || pendingFocus !== f) return;
+  if(bars[0].time*1000 > f && (histDone || !ivalReaches(curIval, f))){
+    const better = IVALS.find(v => IVAL_SEC[v] > ivalSec() && ivalReaches(v, f));
+    if(focusAutoIval && better){       // reload at the coarser ival; it re-runs this focus
+      focusNote = 'no '+curIval+' history that far back — switched to '+better;
+      curIval = better; persistChart(); renderIvals(); loadCandles(); hlResub();
+      return;
+    }
+    focusNote = 'no '+curIval+' history that far back — showing oldest available';
+  }
+  pendingFocus = null;
+  // span0 = the user's view width, clamped to something sane for this timeframe
+  const fSec = Math.min(Math.max(Math.floor(f/1000), bars[0].time), bars[bars.length-1].time);
+  try{
+    chart.timeScale().setVisibleRange({from: fSec - span0*0.55, to: fSec + span0*0.45});
+  }catch(e){}
+  if(focusNote){ cNote(focusNote); focusNote = ''; }
+}
+
+function applyCandle(c){
+  if(!chartReady || !c || barsKey !== curCoin+'|'+curIval) return;
+  if(c.s !== curCoin || c.i !== curIval) return;
+  const t = Math.floor(c.t/1000);
+  const b = {time:t, open:+c.o, high:+c.h, low:+c.l, close:+c.c, vol:+c.v};
+  const last = bars[bars.length-1];
+  const fresh = !last || t > last.time;
+  if(fresh) bars.push(b);
+  else if(t === last.time) bars[bars.length-1] = b;
+  else return;                              // stale update for an already-settled bar
+  cSeries.update({time:b.time, open:b.open, high:b.high, low:b.low, close:b.close});
+  vSeries.update({time:b.time, value:b.vol, color:b.close>=b.open?UPV:DOWNV});
+  setLast(b.close);
+  livePx[curCoin] = b.close;   // candle stream is the freshest price for the charted coin
+  fastPaint(curCoin);          // positions on this coin re-mark with the same tick
+  updateNewsLine();            // % since the focused news moves with the live price
+  if(fresh){ $('c-msg').style.display='none'; buildMarkers(); }  // a new bar may host a fresh trade
+}
+
+// ---- trade markers ------------------------------------------------------------
+// Every fill = one marker on the candle it happened in: buys (open long / close
+// short) are white "B" in a green circle below the bar, sells white "S" in a red
+// circle above it; a clicked news event is a small yellow dot under its candle.
+// Drawn by a custom series primitive (LWC's built-in markers can't put white text
+// inside the shape); falls back to setMarkers if the lib lacks attachPrimitive.
+function snapBar(ms){
+  if(!bars.length || !ms) return null;
+  const t = Math.floor(ms/1000);
+  if(t < bars[0].time) return null;        // older than loaded history
+  let lo=0, hi=bars.length-1, ans=bars[0].time;
+  while(lo<=hi){ const mid=(lo+hi)>>1;
+    if(bars[mid].time<=t){ ans=bars[mid].time; lo=mid+1; } else hi=mid-1; }
+  return ans;
+}
+function barAt(tSec){
+  let lo=0, hi=bars.length-1;
+  while(lo<=hi){ const mid=(lo+hi)>>1, t=bars[mid].time;
+    if(t===tSec) return bars[mid]; if(t<tSec) lo=mid+1; else hi=mid-1; }
+  return null;
+}
+function drawMarks(ctx){
+  if(!chartReady) return;
+  const tsc = chart.timeScale();
+  for(const m of marksPrim._marks){
+    const bar = barAt(m.time); if(!bar) continue;
+    const x = tsc.timeToCoordinate(m.time); if(x==null) continue;
+    if(m.dot){                                       // news-event dot under the candle
+      const y = cSeries.priceToCoordinate(bar.low); if(y==null) continue;
+      ctx.beginPath(); ctx.arc(x, y+9, 4, 0, 2*Math.PI);
+      ctx.fillStyle = m.color; ctx.fill();
+      continue;
+    }
+    const y0 = cSeries.priceToCoordinate(m.below ? bar.low : bar.high); if(y0==null) continue;
+    const y = y0 + (m.below ? 15 : -15);
+    ctx.beginPath(); ctx.arc(x, y, 8, 0, 2*Math.PI);
+    ctx.fillStyle = m.color; ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px Inter,-apple-system,Segoe UI,Roboto,sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(m.text, x, y+0.5);
+  }
+}
+const marksRenderer = { draw: target => target.useMediaCoordinateSpace(s => drawMarks(s.context)) };
+const marksPane = { zOrder: () => 'top', renderer: () => marksRenderer };
+const marksPrim = {
+  _marks: [], _ru: null,
+  attached(p){ this._ru = p.requestUpdate; },
+  detached(){ this._ru = null; },
+  setMarks(m){ this._marks = m; if(this._ru) this._ru(); },
+  updateAllViews(){},
+  paneViews(){ return [marksPane]; },
+};
+function buildMarkers(){
+  if(!chartReady || !curCoin) return;
+  const marks = [];
+  const add = (ms, isBuy) => { const t = snapBar(ms); if(t==null) return;
+    marks.push({ time:t, below:isBuy, color:isBuy?UP:DOWN, text:isBuy?'B':'S' }); };
+  positions.forEach(p => { if(p.market===curCoin) add(p.opened_ms, p.side==='long'); });
+  closedTrades.forEach(p => { if(p.market===curCoin){
+    add(p.opened_ms, p.side==='long');
+    add(p.closed_ms, p.side!=='long'); } });
+  if(newsMark && newsMark.coin === curCoin){
+    const t = snapBar(newsMark.ms);
+    if(t!=null) marks.push({ time:t, dot:true, color:'#e0a93e' });
+  }
+  marks.sort((a,b)=>a.time-b.time);
+  if(cSeries.attachPrimitive) marksPrim.setMarks(marks);
+  else cSeries.setMarkers(marks.filter(m=>!m.dot).map(m => ({ time:m.time,
+    position:m.below?'belowBar':'aboveBar', color:m.color, shape:'circle', text:m.text, size:2 })));
+}
+function onTradeMark(p){
+  if(p && p.market === curCoin){ buildMarkers(); buildPosLines(); }
+  hlResub();   // the set of position coins changed -> adjust live ctx subscriptions
+}
+
+// ---- entry / stop lines for open positions -----------------------------------
+// Solid line at the entry (side-colored, labeled with side + live PnL) and a
+// dashed line at the protective stop. When the trailing stop has ratcheted past
+// the original SL, the dashed line tracks the trailing level instead (TSL).
+function effStopPx(p){
+  if(p.eff_stop != null) return p.eff_stop;        // freshest: from positions.tick
+  if(p.trail_pct > 0){                              // mirror the bot's trailing rule
+    if(p.side==='long' && (p.peak_px||0) > p.entry_px)
+      return Math.max(p.stop_loss, p.peak_px*(1-p.trail_pct));
+    if(p.side!=='long' && (p.peak_px||0) > 0 && p.peak_px < p.entry_px)
+      return Math.min(p.stop_loss, p.peak_px*(1+p.trail_pct));
+  }
+  return p.stop_loss;
+}
+function pnlK(v){ const a=Math.abs(v||0), s=(v>=0?'+$':'−$');
+  return a>=1000 ? s+(a/1000).toFixed(2)+'K' : s+a.toFixed(0); }
+function posLineOpts(p){
+  const stopPx = effStopPx(p);
+  const trailing = p.trail_pct>0 && stopPx>0 && Math.abs(stopPx-p.stop_loss) > 1e-9;
+  const atStop = stopPx>0 ? (stopPx-p.entry_px)*p.size*(p.side==='long'?1:-1) : 0;
+  return {
+    entry: { price:p.entry_px, title:(p.side||'').toUpperCase()+(p.upnl!=null?' '+pnlK(p.upnl):'') },
+    stop: stopPx>0 ? { price:stopPx, title:(trailing?'TSL ':'SL ')+pnlK(atStop) } : null,
+  };
+}
+function clearPosLines(){
+  posLines.forEach(L => { try{ cSeries.removePriceLine(L.entry);
+    if(L.stop) cSeries.removePriceLine(L.stop); }catch(e){} });
+  posLines.clear();
+}
+function buildPosLines(){
+  if(!chartReady) return;
+  clearPosLines();
+  positions.forEach(p => {
+    if(p.market !== curCoin) return;
+    const o = posLineOpts(p), col = p.side==='long' ? UP : DOWN;
+    const entry = cSeries.createPriceLine({price:o.entry.price, color:col, lineWidth:2,
+      lineStyle:0, axisLabelVisible:true, title:o.entry.title});
+    const stop = o.stop ? cSeries.createPriceLine({price:o.stop.price, color:'#e0a93e',
+      lineWidth:1, lineStyle:2, axisLabelVisible:true, title:o.stop.title}) : null;
+    posLines.set(p.id, {entry, stop});
+  });
+}
+function updatePosLines(){   // cheap per-tick refresh: PnL label + trailing stop level
+  positions.forEach(p => {
+    const L = posLines.get(p.id);
+    if(!L || p.market !== curCoin) return;
+    const o = posLineOpts(p);
+    L.entry.applyOptions({title: o.entry.title});
+    if(L.stop && o.stop) L.stop.applyOptions({price: o.stop.price, title: o.stop.title});
+  });
+}
+
+// ---- news reference line -------------------------------------------------------
+// Yellow dashed line at the price when the clicked news broke; its label tracks the
+// % move since (rebuilt per pair/interval from newsMark, so it survives reloads).
+let newsLine = null;
+function newsLineTitle(){
+  const cur = lastPx!=null ? lastPx : curPxOf(curCoin);
+  if(!newsMark || !newsMark.px || cur==null) return 'news';
+  return signpct((cur-newsMark.px)/newsMark.px*100, 2);
+}
+function buildNewsLine(){
+  if(!chartReady) return;
+  if(newsLine){ try{ cSeries.removePriceLine(newsLine); }catch(e){} newsLine = null; }
+  if(!newsMark || newsMark.coin !== curCoin || !newsMark.px) return;
+  newsLine = cSeries.createPriceLine({ price:newsMark.px, color:'#e0a93e', lineWidth:1,
+    lineStyle:2, axisLabelVisible:true, title:newsLineTitle() });
+}
+function updateNewsLine(){
+  if(newsLine) newsLine.applyOptions({title: newsLineTitle()});
+}
+
+// ---- Hyperliquid live stream (public WS: candle + asset ctx for the shown coin)
+function hlSend(o){ try{ if(hlWs && hlWs.readyState===1) hlWs.send(JSON.stringify(o)); }catch(e){} }
+function hlWsConnect(){
+  if(!hlWsUrl) return;
+  try{ if(hlWs){ hlWs.onclose=null; hlWs.close(); } }catch(e){}
+  hlWs = new WebSocket(hlWsUrl);
+  hlWs.onopen = () => { hlWsUp=true; setLive(); hlPing(); hlResub(true);
+    if(curCoin) loadCandles(); };          // backfill any gap from the outage
+  hlWs.onclose = () => { hlWsUp=false; hlLatMs=null; setLive(); setTimeout(hlWsConnect, 3000); };
+  hlWs.onerror = () => { try{ hlWs.close(); }catch(e){} };
+  hlWs.onmessage = e => { let m; try{ m = JSON.parse(e.data); }catch(err){ return; } hlWsMsg(m); };
+}
+// Wanted live subscriptions: candles + ctx for the charted coin, plus a ctx stream
+// per open-position coin so position rows update sub-second even when not charted.
+function wantedSubs(){
+  const subs = [], seen = new Set();
+  const addCtx = c => { if(c && !seen.has(c)){ seen.add(c);
+    subs.push({type:'activeAssetCtx', coin:c}); } };
+  if(curCoin){
+    subs.push({type:'candle', coin:curCoin, interval:curIval});
+    addCtx(curCoin);
+  }
+  positions.forEach(p => addCtx(p.market));
+  return subs;
+}
+function hlResub(fresh){
+  if(!hlWs || hlWs.readyState!==1) return;
+  const want = wantedSubs();
+  const wantKeys = new Set(want.map(s => JSON.stringify(s)));
+  const hadKeys = new Set(fresh ? [] : hlSubbed.map(s => JSON.stringify(s)));
+  if(!fresh) hlSubbed.forEach(s => {
+    if(!wantKeys.has(JSON.stringify(s))) hlSend({method:'unsubscribe', subscription:s}); });
+  want.forEach(s => {
+    if(!hadKeys.has(JSON.stringify(s))) hlSend({method:'subscribe', subscription:s}); });
+  hlSubbed = want;
+}
+function hlWsMsg(m){
+  if(m.channel === 'pong'){
+    if(hlPingAt){ hlLatMs = Math.round(performance.now() - hlPingAt); hlPingAt = 0; setLive(); }
+    return;
+  }
+  if(m.channel === 'candle' && m.data){
+    if(Array.isArray(m.data)) m.data.forEach(applyCandle); else applyCandle(m.data);
+  } else if((m.channel==='activeAssetCtx' || m.channel==='activeSpotAssetCtx')
+            && m.data && m.data.ctx){
+    const coin = m.data.coin, x = m.data.ctx, mark = +x.markPx || 0;
+    const px = +x.midPx || mark;
+    if(px){ livePx[coin] = px; fastPaint(coin); }   // positions update at stream frequency
+    if(coin !== curCoin) return;
+    if(+x.prevDayPx) tb.prevDay = +x.prevDayPx;
+    if(+x.oraclePx) tb.oracle = +x.oraclePx;
+    if(+x.dayNtlVlm) tb.vol = +x.dayNtlVlm;
+    if(x.funding!=null && isFinite(+x.funding)) tb.funding = +x.funding;
+    if(+x.openInterest && mark) tb.oiUsd = (+x.openInterest) * mark;
+    if(lastPx==null && px) lastPx = px;
+    tb.has = true;
+    tbRender();
+  }
+}
+// Chart-frequency fast path: every streamed price for `coin` (candle update for the
+// charted pair, activeAssetCtx tick for each open-position coin) immediately re-marks
+// the positions on that coin — positions move in lockstep with the chart instead of
+// on a timer. The bot's authoritative 3s tick still corrects stops/funding/peaks.
+function fastPaint(coin){
+  const px = livePx[coin];
+  if(px==null || !positions.size) return;
+  let dirty = false;
+  positions.forEach(p => {
+    if(p.market !== coin) return;
+    const upnl = (px - p.entry_px) * p.size * (p.side==='long' ? 1 : -1);
+    if(p.mark===px && p.upnl!=null && Math.abs(p.upnl-upnl) < 1e-9) return;
+    p.mark = px; p.upnl = upnl; dirty = true;
+    paintPos(p);
+  });
+  if(dirty){ updateAcct(); updatePosLines(); }
+}
+// Header HL indicator: connection dot + round-trip latency measured on the ping/pong
+// cycle (which doubles as the keep-alive — HL drops idle sockets).
+let hlPingAt = 0, hlLatMs = null;
+function setLive(){
+  $('hl-dot').className = 'dot ' + (hlWsUp ? 'ok' : 'bad');
+  const l = $('hl-lat');
+  l.textContent = (hlWsUp && hlLatMs != null) ? hlLatMs + 'ms' : '';
+  l.className = hlLatMs == null ? '' : hlLatMs < 150 ? 'lat-ok' : hlLatMs < 400 ? 'lat-warn' : 'lat-bad';
+  $('hl-stat').title = $('hl-stat').dataset.label + ': ' + (hlWsUp
+    ? 'live' + (hlLatMs != null ? ' — ' + hlLatMs + 'ms round-trip' : '')
+    : 'reconnecting (REST polling fallback)');
+}
+function hlPing(){ if(hlWs && hlWs.readyState === 1){ hlPingAt = performance.now(); hlSend({method:'ping'}); } }
+setInterval(hlPing, 10000);
+// Funding pays hourly on HL -> countdown to the next UTC hour.
+setInterval(() => {
+  const s = Math.max(0, Math.ceil((3600000 - Date.now()%3600000)/1000));
+  $('c-cd').textContent = String(Math.floor(s/3600)).padStart(2,'0') + ':'
+    + String(Math.floor((s%3600)/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
+}, 1000);
+// Poll fallback: keep the last candles moving whenever the HL stream is down.
+setInterval(async () => {
+  if(!curCoin || hlWsUp || !chartReady) return;
+  try{
+    const r = await fetch(`/api/candles?coin=${encodeURIComponent(curCoin)}&interval=${curIval}`
+                          + `&start=${Date.now()-3*ivalSec()*1000}`);
+    if(r.ok){ const d = await r.json(); if(Array.isArray(d)) d.forEach(applyCandle); }
+  }catch(e){}
+}, 5000);
+setInterval(() => { if(curCoin) loadMarkets(); }, 30000);   // top-bar/modal freshness
+
+// ---- MC / FDV (best-effort, crypto only) ------------------------------------
+async function loadCoinMeta(){
+  const coin = curCoin;
+  $('c-mc').textContent = '—'; $('c-fdv').textContent = '—';
+  const m = findMarket(coin);
+  if(coin.includes(':') || (m && m.asset_class !== 'crypto')) return;   // crypto only
+  const render = v => { if(coin !== curCoin) return;
+    $('c-mc').textContent = v.mc ? fmtUsd(v.mc) : '—';
+    $('c-fdv').textContent = v.fdv ? fmtUsd(v.fdv) : '—';
+    // if the icon chain already fell back to the letter dot, try CoinGecko's image
+    const ic = $('c-ico');
+    if(v.img && ic && !ic.querySelector('img'))
+      ic.innerHTML = `<img class="cicon" src="${esc(v.img)}" data-alt=""`
+                   + ` data-fsym="${esc(curSym)}" alt="" onerror="icoErr(this)">`;
+  };
+  const hit = coinMetaCache[coin];
+  if(hit && Date.now()-hit.at < 600000){ render(hit); return; }
+  try{
+    const r = await fetch('/api/coinmeta?symbol='+encodeURIComponent(coin));
+    if(r.ok){ const d = await r.json();
+      const v = {at:Date.now(), mc:d.market_cap, fdv:d.fdv, img:d.image||''};
+      coinMetaCache[coin] = v; render(v); }
+  }catch(e){}
+}
+
+// ---- interval buttons --------------------------------------------------------
+function renderIvals(){
+  $('ivals').innerHTML = IVALS.map(v =>
+    `<button class="ival${v===curIval?' on':''}" data-ival="${v}">${IVAL_LABEL[v]||v}</button>`).join('');
+}
+$('ivals').addEventListener('click', e => {
+  const b = e.target.closest('[data-ival]');
+  if(!b || b.dataset.ival === curIval) return;
+  // Keep the moment the user is looking at across timeframe changes (a pending
+  // snap-to-trade keeps its own target); only a live-edge view re-anchors to now.
+  // An explicit ival choice is never auto-escalated away — if this timeframe can't
+  // reach the moment, applyFocus shows the oldest it has and says so.
+  if(!pendingFocus && bars.length && !atLiveEdge()){
+    pendingFocus = viewCenterMs() || null;
+    focusSpanSec = visSpanSec();
+  }
+  focusAutoIval = false;
+  curIval = b.dataset.ival; persistChart(); renderIvals(); loadCandles(); hlResub();
+});
+
+// ---- market switcher modal -----------------------------------------------------
+function openMk(){
+  $('mkov').hidden = false;
+  const s = $('mksearch'); s.value=''; s.focus();
+  renderMk(); loadMarkets(true);
+}
+function closeMk(){ $('mkov').hidden = true; }
+function renderMkChips(){
+  const dexes = [...new Set(markets.map(m => m.dex))];
+  $('mkchips').innerHTML = ['all', ...dexes].map(d =>
+    `<button class="chip${mkFilter===d?' on':''}" data-dexf="${esc(d)}">`
+    + (d==='all' ? 'ALL' : (d==='' ? 'CRYPTO' : esc(d.toUpperCase()))) + '</button>').join('');
+}
+function renderMk(){
+  renderMkChips();
+  if(markets.length) $('mksearch').placeholder = 'Search '+markets.length+' markets …';
+  const q = ($('mksearch').value||'').trim().toUpperCase();
+  let list = markets;
+  if(mkFilter !== 'all') list = list.filter(m => m.dex === mkFilter);
+  if(q) list = list.filter(m => m.symbol.includes(q) || m.name.toUpperCase().includes(q));
+  const total = list.length;
+  list = list.slice(0, 250);               // sorted by volume server-side
+  $('mkrows').innerHTML = list.map(m => {
+    const chg = m.prev_day_px>0 ? (m.px-m.prev_day_px)/m.prev_day_px*100 : null;
+    return `<tr class="mkrow${m.name===curCoin?' cur':''}" data-coin="${esc(m.name)}">
+      <td>${iconHtml(m, true)}
+        <b>${esc(m.symbol)}</b><span class="dim">${m.dex?'-USD':'-USDC'}</span>
+        ${m.dex?`<span class="dexb">${esc(m.dex.toUpperCase())}</span>`:''}</td>
+      <td class="r">${fmtPx(m.px)}</td>
+      <td class="r">${fmtUsd(m.day_ntl_vlm)}</td>
+      <td class="r ${chg==null?'':(chg>=0?'long':'short')}">${chg==null?'—':signpct(chg,2)}</td>
+      <td class="r">${fmtUsd(m.open_interest_usd)}</td>
+      <td class="r ${m.funding>=0?'long':'short'}">${(m.funding*100).toFixed(4)}%</td></tr>`;
+  }).join('') || `<tr><td colspan="6" class="empty">${markets.length?'No markets match.':'No markets loaded yet.'}</td></tr>`;
+  $('mkcount').textContent = total + ' / ' + markets.length + ' markets';
+}
+$('pairbtn').addEventListener('click', openMk);
+$('mksearch').addEventListener('input', renderMk);
+$('mksearch').addEventListener('keydown', e => {
+  if(e.key === 'Enter'){ const r = $('mkrows').querySelector('[data-coin]');
+    if(r) chartTo(r.dataset.coin); }
+});
+$('mkchips').addEventListener('click', e => {
+  const c = e.target.closest('[data-dexf]');
+  if(!c) return; mkFilter = c.dataset.dexf; renderMk();
+});
+$('mkov').addEventListener('click', e => { if(e.target === $('mkov')) closeMk(); });
+document.addEventListener('keydown', e => { if(e.key==='Escape' && !$('mkov').hidden) closeMk(); });
+
+function connect(){
+  const ws = new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws');
+  // healthy = silent; the yellow pill only appears while the bot link is down
+  ws.onopen = () => { $('conn').hidden = true; pollHealth(); };
+  ws.onclose = () => { $('conn').hidden = false; setTimeout(connect,2000); };
+  ws.onmessage = e => { try{ onEvent(JSON.parse(e.data)); }catch(err){ console.error(err); } };
+}
+connect();
+</script>
+</body>
+</html>
