@@ -1,4 +1,4 @@
-# hlbot — news-catalyst trading bot for Hyperliquid & trade.xyz
+# llmnewsarena — news-catalyst trading bot for Hyperliquid & trade.xyz
 
 Automated **news-catalyst** trader for [Hyperliquid](https://hyperliquid.xyz) perps —
 standard crypto perps (`BTC`, `ETH`, alts) and [trade.xyz](https://trade.xyz) HIP-3
