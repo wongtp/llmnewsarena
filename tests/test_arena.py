@@ -317,6 +317,93 @@ def test_arena_news_pagination_pages_older_analyzed_items():
     assert client.get("/api/arena/news").status_code == 400   # missing before
 
 
+def test_arena_snapshot_feed_seed_is_contiguous_first_page():
+    # The snapshot must seed the feed with the first PAGE of the same pagination the
+    # "load more" button uses: analyzed items only, newest first, with EVERY model's
+    # analysis row. Seeding from the raw tables (50 analysis rows ≈ 10 items at 5 models
+    # each, news incl. un-analyzed rows) made the client cursor overshoot the delivered
+    # verdicts, so "load more" skipped the analyzed items in between (mid-feed gap).
+    from hlbot.models import Analysis, NewsItem, now_ms
+
+    class _FakeLane4:
+        key, model, gate, live, capital_usd = "x", "m", 0.8, False, 1.0
+
+        class pm:
+            @staticmethod
+            def open_count():
+                return 0
+
+        @staticmethod
+        def open_unrealized():
+            return 0.0
+
+    cfg = Config()
+    store = Store(path=_tmp())
+    t0 = now_ms() - 10**9
+    models = [f"model-{k}" for k in "ABCDE"]
+
+    async def seed():
+        await store.init()
+        for i in range(1, 13):   # 11 analyzed x 5 models = 55 analyses (> the old 50-row cap)
+            await store.save_news(NewsItem(id=f"n{i}", title=f"headline {i}", body="",
+                                           source="s", link=None, time_ms=t0 + i * 1000,
+                                           received_ms=t0 + i * 1000))
+            if i != 5:   # n5 was filtered before analysis — must not appear in the seed
+                for m in models:
+                    await store.save_analysis(Analysis(f"n{i}", "ACME", "equity", "long",
+                                                       0.9, "days", False, "r", m))
+
+    asyncio.run(seed())
+    app = create_arena_app(EventBus(), store, cfg, [_FakeLane4()])
+    client = TestClient(app)
+    snap = client.get("/api/arena/snapshot").json()
+    assert [n["id"] for n in snap["news"]] == [f"n{i}" for i in range(12, 0, -1) if i != 5]
+    assert len(snap["analyses"]) == 55   # all 5 models for every seeded item, uncapped
+    # Contiguity: paging from the oldest seeded item must come back empty, not reveal
+    # items the seed silently skipped.
+    oldest = min(n["time_ms"] for n in snap["news"])
+    assert client.get("/api/arena/news", params={"before": oldest}).json()["news"] == []
+
+
+def test_arena_snapshot_seeds_open_positions_uncapped():
+    # The client REBUILDS its open-positions map from snapshot["open_positions"] on every
+    # (re)connect — it must contain every open row across lanes (closed rows excluded),
+    # NOT the mixed 50-row positions table, or positions closed while a viewer was
+    # disconnected linger as ghosts / open ones older than the 50 newest rows vanish.
+    class _FakeLane6:
+        key, model, gate, live, capital_usd = "x", "model-A", 0.8, False, 1.0
+
+        class pm:
+            @staticmethod
+            def open_count():
+                return 0
+
+        @staticmethod
+        def open_unrealized():
+            return 0.0
+
+    cfg = Config()
+    store = Store(path=_tmp())
+    now = int(time.time() * 1000)
+
+    async def seed():
+        await store.init()
+        await store.upsert_position(_closed_pos("c1", "model-A", +50.0, dry=True))
+        for i, model in enumerate(["model-A", "model-B"]):
+            await store.upsert_position(Position(
+                id=f"o{i}", news_id="n", market="xyz:MRVL", symbol="MRVL", dex="xyz",
+                side="long", size=1.0, entry_px=100.0, stop_loss=97.0, take_profit=0.0,
+                leverage=5, notional_usd=100.0, opened_ms=now - 10**8,  # older than 50 newest
+                time_exit_ms=now + 10**9, dry_run=True, model_id=model))
+
+    asyncio.run(seed())
+    app = create_arena_app(EventBus(), store, cfg, [_FakeLane6()])
+    client = TestClient(app)
+    snap = client.get("/api/arena/snapshot").json()
+    assert {p["id"] for p in snap["open_positions"]} == {"o0", "o1"}
+    assert all(p["status"] == "open" for p in snap["open_positions"])
+
+
 def test_arena_usage_endpoint_aggregates_per_model():
     # /api/arena/usage backs the usage modal: per-model analysis count / mean latency /
     # summed cost from the DB, merged with the token ledger priced via pricing.py.

@@ -311,7 +311,7 @@
 </head>
 <body>
 <div class="topbar">
-  <span class="dot" id="conn"></span>
+  <span class="dot" id="conn" title="connecting…"></span>
   <span class="brand"><span class="a">▲</span> ARENA</span>
   <span class="badge" id="mode">PAPER</span>
   <div id="lbbar" class="lbbar"></div>
@@ -1224,7 +1224,7 @@ function repaintLeaderboard(){
       <span class="ret ${ret>=0?'pos':'neg'}">${pct(ret)}</span>
       ${u?`<span class="u ${u>=0?'pos':'neg'}">${usd(u)} open</span>`:''}
       ${r.live?'<span class="live">LIVE</span>':''}
-      ${r.halted?`<span class="halted" title="${(r.halt_reason||'').replace(/"/g,'')}">HALT</span>`:''}</div>`;
+      ${r.halted?`<span class="halted" title="${esc(r.halt_reason||'')}">HALT</span>`:''}</div>`;
   }).join('');
 }
 
@@ -1344,13 +1344,20 @@ function renderHistory(){
 // window): fetch each once via the detail endpoint so cards show the real headline instead
 // of the stub title. `hydrated` guards each id to a single DB consult per session.
 let _hhBusy=false;
+const _hhRetryAt=new Map();   // id -> next attempt ms for FAILED detail fetches: without a
+// backoff, the post-batch re-render re-wants the same ids and a persistently failing
+// endpoint (server restarting, tunnel down) gets hammered in a tight fetch loop.
 async function hydrateMissingHeadlines(ids){
-  const want=ids.filter(id=>id&&!String(id).startsWith('pos:')&&!news.has(id)&&!hydrated.has(id))
-    .slice(0,40);
+  const now=Date.now();
+  const want=ids.filter(id=>id&&!String(id).startsWith('pos:')&&!news.has(id)&&!hydrated.has(id)
+    &&(_hhRetryAt.get(id)||0)<=now).slice(0,40);
   if(!want.length||_hhBusy)return;
-  _hhBusy=true;
-  try{for(const id of want)await hydrateDetail(id);}finally{_hhBusy=false;}
-  resortFeedMaps();renderHistory();renderPositions();
+  _hhBusy=true;let got=false;
+  try{for(const id of want){await hydrateDetail(id);
+    if(news.has(id)||hydrated.has(id)){_hhRetryAt.delete(id);got=true;}
+    else _hhRetryAt.set(id,Date.now()+60000);}}
+  finally{_hhBusy=false;}
+  if(got){resortFeedMaps();renderHistory();renderPositions();}   // re-render only on progress
 }
 
 function renderFeed(){
@@ -1384,7 +1391,7 @@ function renderFeed(){
       return `<span class="chip ${v.dir}${fire}" title="${nm}">${modelIcon(e.model,11)}${body}</span>`;
     }).join('');
     const quiet=!anyTrade&&entrants.length&&entrants.every(e=>{const v=vs[e.model];return v&&v.dir==='none';});
-    return `<div class="fitem nclick${anyTrade?' traded':quiet?' quiet':''}" data-id="${id}"><span class="t">${ago((n.ts||0)/1000)} ago</span>
+    return `<div class="fitem nclick${anyTrade?' traded':quiet?' quiet':''}" data-id="${esc(id)}" data-ts="${+n.ts||0}"><span class="t" title="${n.ts?esc(new Date(n.ts).toLocaleString()):''}">${ago((n.ts||0)/1000)} ago</span>
       <div class="hl">${hlite(headlineOf(n),180)}</div>
       <div class="mut" style="font-size:10.5px;margin-top:1px">${esc(n.source||'')}${anyTrade?' · <span class="pos" style="font-weight:700">traded</span>':''}</div>
       ${ticksHtml(id)}
@@ -1434,7 +1441,11 @@ function resortFeedMaps(){
   }
 }
 
-function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+// Quotes escaped too: esc'd values land inside double-quoted HTML attributes (title=, data-*),
+// and news text is attacker-controllable on a public page — an unescaped " would break out of
+// the attribute and inject handlers even with <> escaped.
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,
+  c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function headlineOf(n){return (n.body||n.title||'');}   // tradfi puts the real text in body
 
 // ---- headline ticker/company highlighting ----
@@ -1505,22 +1516,30 @@ function onSnapshot(p){
   if(p.aliases)hlAliases=p.aliases;
   buildHilite();
   (p.news||[]).forEach(addNews);
+  // Snapshot news is the first feed page (analyzed items only, contiguous — see
+  // snapshot_payload) so its oldest time_ms IS the "load more" cursor. If the seed ever
+  // reverts to raw news rows this min would overshoot the delivered verdicts and "load
+  // more" would skip the items in between.
   (p.news||[]).forEach(n=>{if(n.time_ms)feedBefore=Math.min(feedBefore,n.time_ms);});
   (p.analyses||[]).forEach(addVerdict);
   (p.decisions||[]).forEach(addDecision);
   closedTrades=[];
-  (p.positions||[]).forEach(x=>{
-    if(x.status==='open') openPos.set(x.id,x);
-    if(x.news_id){ if(!traded.has(x.news_id))traded.set(x.news_id,{});
-      traded.get(x.news_id)[x.model_id]={side:x.side,notional:x.notional_usd}; }
-  });
+  const seedTraded=x=>{ if(x.news_id){ if(!traded.has(x.news_id))traded.set(x.news_id,{});
+    traded.get(x.news_id)[x.model_id]={side:x.side,notional:x.notional_usd}; } };
+  // REBUILD open positions from the snapshot's authoritative open_positions seed (all
+  // lanes, uncapped) instead of accumulating: a position closed while this tab was
+  // disconnected would otherwise linger open forever (ghost card + phantom leaderboard
+  // uPnL). Falls back to the mixed 50-row positions table for older servers.
+  openPos.clear();
+  const openSrc=p.open_positions||(p.positions||[]).filter(x=>x.status==='open');
+  openSrc.forEach(x=>{if(x.status==='open')openPos.set(x.id,x);seedTraded(x);});
+  (p.positions||[]).forEach(seedTraded);
   // Trade history: the dedicated deep seed (200 newest closed, all lanes); fall back to the
   // closed rows inside the general 50-row snapshot for older servers.
   const closedSrc=(p.closed_positions&&p.closed_positions.length)?p.closed_positions
                   :(p.positions||[]).filter(x=>x.status==='closed');
   closedSrc.forEach(x=>{
-    if(x.news_id){ if(!traded.has(x.news_id))traded.set(x.news_id,{});
-      traded.get(x.news_id)[x.model_id]={side:x.side,notional:x.notional_usd}; }
+    seedTraded(x);
     if(x.opened_ms&&x.closed_ms)closedTrades.push(x);   // entry+exit markers + history rows
   });
   closedTrades=closedTrades.slice(-MAX_CLOSED);
@@ -1536,8 +1555,9 @@ function onCapital(p){
 
 function connect(){
   const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');
-  ws.onopen=()=>$('conn').classList.add('on');
-  ws.onclose=()=>{$('conn').classList.remove('on');setTimeout(connect,2000);};
+  ws.onopen=()=>{const c=$('conn');c.classList.add('on');c.title='live — connected';};
+  ws.onclose=()=>{const c=$('conn');c.classList.remove('on');c.title='disconnected — reconnecting…';
+    setTimeout(connect,2000);};
   ws.onmessage=ev=>{
     const {topic,payload}=JSON.parse(ev.data);
     if(topic==='snapshot') onSnapshot(payload);
@@ -1879,7 +1899,16 @@ $('layoutreset').addEventListener('click',()=>{layoutCols=0;layoutPosh=0;saveLay
 applyLayout();
 
 initChart(); connect();
-setInterval(renderFeed, 30000);   // refresh the relative "ago" timestamps
+// Refresh the relative "ago" timestamps in place (a full renderFeed rebuild every 30s
+// recreated ~100 rows of DOM: dropped hover state, wiped text selection, re-decoded every
+// logo <img>). fillNewsTicks re-tries any price lookups that failed (its cache uncaches
+// failures) — that retry used to ride the full re-render.
+setInterval(()=>{
+  document.querySelectorAll('#feed .fitem[data-ts]').forEach(el=>{
+    const t=+el.dataset.ts;if(!t)return;
+    const s=el.querySelector('.t');if(s)s.textContent=ago(t/1000)+' ago';});
+  fillNewsTicks($('feed'));
+}, 30000);
 </script>
 </body>
 </html>

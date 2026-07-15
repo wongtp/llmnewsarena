@@ -45,6 +45,8 @@ CANDLE_RATE_MAX = 40               # requests allowed per IP per window
 CANDLE_CONCURRENCY = 4             # simultaneous upstream HL candle fetches (all viewers)
 CANDLE_CACHE_MAX = 64              # LRU entries for fully-past (immutable) history pages
 
+SNAPSHOT_FEED_ITEMS = 50           # analyzed news items seeding the feed on page load
+
 
 def _serialize(event: Event) -> dict:
     return {"topic": event.topic, "ts": event.ts, "payload": to_jsonable(event.payload)}
@@ -89,9 +91,24 @@ def create_arena_app(bus: EventBus, store, config: Config, lanes, hl=None) -> Fa
 
     async def snapshot_payload() -> dict:
         snap = await store.snapshot()   # news / analyses / decisions / positions (all lanes)
+        # Feed seed = the first PAGE of the feed's own pagination (news_page: analyzed items
+        # only, each with ALL its analysis/decision rows). The raw snapshot tables can't seed
+        # the feed: 50 analysis ROWS ≈ only ~10 items (one per model), while the 50 raw news
+        # rows (filtered/deduped included) push the client's pagination cursor (feedBefore =
+        # oldest seeded news) far past the items whose verdicts were actually delivered —
+        # "load more" then pages strictly before the cursor and skips everything in between.
+        # `before` is now+24h: item time_ms is source-stamped, so allow modest clock skew.
+        page = await store.news_page(int(time.time() * 1000) + 86_400_000,
+                                     limit=SNAPSHOT_FEED_ITEMS)
+        snap.update(news=page["news"], analyses=page["analyses"], decisions=page["decisions"])
         # Deeper closed-trade seed for the trade-history panel (snapshot() caps at 50 rows
         # of open+closed mixed; the panel wants a real cross-model history).
         snap["closed_positions"] = await store.recent_closed_positions()
+        # Authoritative open-position seed (all lanes, uncapped): the client REBUILDS its
+        # open-positions map from this on every (re)connect, so a position closed while a
+        # viewer was disconnected can't linger as a ghost card. The mixed `positions`
+        # table stays for the traded-map seed and older clients.
+        snap["open_positions"] = await store.open_positions()
         snap["entrants"] = entrants
         snap["leaderboard"] = await leaderboard()
         snap["started_ms"] = await store.arena_started_ms()   # competition start (header + usage modal)
@@ -112,7 +129,7 @@ def create_arena_app(bus: EventBus, store, config: Config, lanes, hl=None) -> Fa
     async def detail(id: str = "") -> JSONResponse:
         """News + per-model analyses/decisions for ONE item. The modal fetches this when a
         clicked trade's news has scrolled out of the snapshot window (old history rows)."""
-        if not id:
+        if not id or len(id) > 128:   # ids are "tg:chan:msgid"/Tree _ids; public endpoint
             return JSONResponse({"error": "missing id"}, status_code=400)
         return JSONResponse(await store.news_detail(id))
 
